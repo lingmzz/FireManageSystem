@@ -16,6 +16,7 @@ enum Permission {
     APPROVAL_RECTIFY("approvals:rectify", "提交整改"),
     APPROVAL_REVIEW("approvals:review", "复核整改"),
     APPROVAL_ALL("approvals:view-all", "查看全部审批"),
+    FIRE_DASHBOARD("fire:dashboard", "查看消防首页大屏"),
     FIRE_ORG("fire:org", "管理消防单位和用户范围"),
     FIRE_DEVICE_READ("fire:device-read", "查看消防设备"),
     FIRE_DEVICE_ADD("fire:device-add", "新增消防设备"),

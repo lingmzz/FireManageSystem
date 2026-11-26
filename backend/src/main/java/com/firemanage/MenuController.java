@@ -189,6 +189,7 @@ class MenuController {
     }
 
     enum View {
+        FIRE_DASHBOARD("fire-dashboard", "首页概览", Permission.FIRE_DASHBOARD),
         FIRE_DEVICES("fire-devices", "消防设备台账", Permission.FIRE_DEVICE_READ,
                 Permission.FIRE_DEVICE_ADD, Permission.FIRE_DEVICE_EDIT, Permission.FIRE_DEVICE_OPERATE,
                 Permission.FIRE_DEVICE_IMPORT),

@@ -1,5 +1,7 @@
 package com.firemanage;
 
+import java.util.List;
+
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.env.Environment;
@@ -37,6 +39,24 @@ class InitialSetup implements ApplicationRunner {
                     .param("view", MenuController.View.WORKFLOWS.key).query(Long.class).single();
             if (existing == 0) {
                 menu(parent == 0 ? null : parent, MenuController.View.WORKFLOWS.label, MenuController.View.WORKFLOWS.key, 40);
+            }
+        }
+        if (markFeature("fire-dashboard-v1")) {
+            long existing = jdbc.sql("SELECT COUNT(*) FROM fm_menu WHERE view_key = :view")
+                    .param("view", MenuController.View.FIRE_DASHBOARD.key).query(Long.class).single();
+            if (existing == 0) {
+                menu(null, MenuController.View.FIRE_DASHBOARD.label, MenuController.View.FIRE_DASHBOARD.key, 1);
+            }
+            List<Long> fireRoles = jdbc.sql("SELECT DISTINCT role_id FROM fm_role_permission\n"
+                    + "WHERE permission_code IN ('fire:device-read', 'fire:hazard-read', 'fire:drill-read', 'fire:maint-read', 'fire:org')")
+                    .query(Long.class).list();
+            for (Long roleId : fireRoles) {
+                long granted = jdbc.sql("SELECT COUNT(*) FROM fm_role_permission WHERE role_id = :role AND permission_code = :code")
+                        .param("role", roleId).param("code", Permission.FIRE_DASHBOARD.code).query(Long.class).single();
+                if (granted == 0) {
+                    jdbc.sql("INSERT INTO fm_role_permission (role_id, permission_code) VALUES (:role, :code)")
+                            .param("role", roleId).param("code", Permission.FIRE_DASHBOARD.code).update();
+                }
             }
         }
     }
@@ -78,15 +98,18 @@ class InitialSetup implements ApplicationRunner {
                 + "WHERE NOT EXISTS (SELECT 1 FROM fm_fire_unit WHERE code = 'CHANGCHE')").update();
 
         addFireRole("FIRE_STATION", "车站消防管理员",
+                Permission.FIRE_DASHBOARD,
                 Permission.FIRE_DEVICE_READ, Permission.FIRE_DEVICE_ADD, Permission.FIRE_DEVICE_OPERATE,
                 Permission.FIRE_MAINT_READ, Permission.FIRE_DRILL_READ, Permission.FIRE_DRILL_WRITE,
                 Permission.FIRE_HAZARD_READ, Permission.FIRE_HAZARD_ADD, Permission.FIRE_HAZARD_REPORT);
         addFireRole("FIRE_DEPARTMENT", "科室消防管理员",
+                Permission.FIRE_DASHBOARD,
                 Permission.FIRE_DEVICE_READ, Permission.FIRE_DEVICE_ADD, Permission.FIRE_DEVICE_EDIT,
                 Permission.FIRE_DEVICE_OPERATE, Permission.FIRE_DEVICE_IMPORT, Permission.FIRE_MAINT_READ,
                 Permission.FIRE_DRILL_READ, Permission.FIRE_HAZARD_READ, Permission.FIRE_HAZARD_ADD,
                 Permission.FIRE_HAZARD_REPORT, Permission.FIRE_HAZARD_CONFIRM);
         addFireRole("FIRE_SEGMENT", "车务段消防管理员",
+                Permission.FIRE_DASHBOARD,
                 Permission.FIRE_DEVICE_READ, Permission.FIRE_DEVICE_ADD, Permission.FIRE_DEVICE_EDIT,
                 Permission.FIRE_DEVICE_OPERATE, Permission.FIRE_DEVICE_IMPORT, Permission.FIRE_MAINT_READ,
                 Permission.FIRE_MAINT_WRITE, Permission.FIRE_DRILL_READ, Permission.FIRE_DRILL_WRITE,

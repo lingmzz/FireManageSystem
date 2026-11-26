@@ -23,6 +23,7 @@ import RolePage from './pages/RolePage.vue'
 import MenuPage from './pages/MenuPage.vue'
 import ApprovalPage from './pages/ApprovalPage.vue'
 import FireDevicesPage from './pages/FireDevicesPage.vue'
+import FireDashboardPage from './pages/FireDashboardPage.vue'
 import FireMaintainersPage from './pages/FireMaintainersPage.vue'
 import FireDrillsPage from './pages/FireDrillsPage.vue'
 import FireHazardsPage from './pages/FireHazardsPage.vue'
@@ -30,6 +31,7 @@ import FireUnitsPage from './pages/FireUnitsPage.vue'
 import ApprovalFlowsPage from './pages/ApprovalFlowsPage.vue'
 
 const views = {
+  'fire-dashboard': { name: '首页概览', permission: 'fire:dashboard', page: FireDashboardPage },
   'fire-devices': { name: '消防设备台账', permission: 'fire:device-read', page: FireDevicesPage },
   'fire-maintainers': { name: '维保单位', permission: 'fire:maint-read', page: FireMaintainersPage },
   'fire-drills': { name: '应急演练台账', permission: 'fire:drill-read', page: FireDrillsPage },
@@ -71,6 +73,7 @@ function firstView(items) {
 
 const viewKey = computed(() => {
   if (allowed.value.includes(current.value)) return current.value
+  if (allowed.value.includes('fire-dashboard')) return 'fire-dashboard'
   if (allowed.value.includes('approvals')) return 'approvals'
   return firstView(session.user?.menus ?? []) ?? allowed.value[0]
 })

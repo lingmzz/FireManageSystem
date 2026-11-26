@@ -98,6 +98,7 @@ class DatabaseCompatibilityTest {
 
             verifyWorkflow(client, json, report);
             verifyDevices(client, json, jdbc);
+            verifyDashboard(client, json, jdbc);
         }
     }
 
@@ -142,6 +143,25 @@ class DatabaseCompatibilityTest {
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
             assertTrue(workbook.getNumberOfSheets() > 0);
         }
+    }
+
+    private static void verifyDashboard(Client client, ObjectMapper json, JdbcTemplate jdbc) {
+        long unitId = jdbc.queryForObject("SELECT id FROM fm_fire_unit WHERE code = 'CHANGCHE'", Long.class);
+        ObjectNode hazard = json.createObjectNode().put("unitId", unitId).put("title", "大屏测试隐患")
+                .put("location", "候车厅").put("description", "消防器材需复核");
+        client.request(HttpMethod.POST, "/api/fire/hazards", hazard, JsonNode.class);
+
+        JsonNode dashboard = client.request(HttpMethod.GET, "/api/fire/dashboard", null, JsonNode.class);
+        assertEquals(1, dashboard.path("summary").path("deviceTotal").asInt());
+        assertEquals(1, dashboard.path("summary").path("hazardOpen").asInt());
+        assertEquals(7, dashboard.path("categories").size());
+        assertEquals(6, dashboard.path("trends").size());
+        assertTrue(dashboard.path("unitStatuses").size() >= 1);
+        assertTrue(dashboard.path("recentActivities").size() >= 2);
+
+        JsonNode scoped = client.request(HttpMethod.GET, "/api/fire/dashboard?unitId=" + unitId, null, JsonNode.class);
+        assertEquals(unitId, scoped.path("selectedUnitId").asLong());
+        assertEquals(1, scoped.path("summary").path("deviceTotal").asInt());
     }
 
     private static final class Client {

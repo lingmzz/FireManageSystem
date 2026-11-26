@@ -1,7 +1,7 @@
 <script setup>
 import {
   BoxesIcon, Building2Icon, ClipboardCheckIcon, FlameIcon, HandshakeIcon,
-  LayoutGridIcon, ListTreeIcon, ShieldIcon, SirenIcon, UsersRoundIcon, WorkflowIcon
+  LayoutDashboardIcon, LayoutGridIcon, ListTreeIcon, ShieldIcon, SirenIcon, UsersRoundIcon, WorkflowIcon
 } from '@lucide/vue'
 import {
   SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton,
@@ -11,6 +11,7 @@ import {
 defineProps({ items: Array, active: String })
 const { setOpenMobile } = useSidebar()
 const icons = {
+  'fire-dashboard': LayoutDashboardIcon,
   'fire-devices': BoxesIcon,
   'fire-maintainers': HandshakeIcon,
   'fire-drills': SirenIcon,
