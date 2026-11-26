@@ -2,20 +2,23 @@ package com.firemanage;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
+import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Positive;
+import javax.validation.constraints.Size;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import lombok.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,17 +31,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import static com.firemanage.ApiSupport.insert;
 import static com.firemanage.ApiSupport.invalidField;
 import static com.firemanage.ApiSupport.missing;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.strip;
 
 @RestController
 @RequestMapping("/api/menus")
 class MenuController {
-    private static final String MENU_QUERY = """
-            SELECT id, parent_id, name, view_key, permission_code, sort_order, enabled
-            FROM fm_menu ORDER BY sort_order, id
-            """;
+    private static final String MENU_QUERY = "SELECT id, parent_id, name, view_key, permission_code, sort_order, enabled\n"
+            + "FROM fm_menu ORDER BY sort_order, id\n";
 
     private final JdbcClient jdbc;
     private final AccessService access;
@@ -58,8 +60,8 @@ class MenuController {
     MenuOptions options(Authentication authentication) {
         access.actor(authentication).require(Permission.MENUS);
         return new MenuOptions(Arrays.stream(View.values())
-                .map(view -> new Option(view.key, view.label)).toList(),
-                Arrays.stream(Permission.values()).map(permission -> new Option(permission.code, permission.label)).toList());
+                .map(view -> new Option(view.key, view.label)).collect(Collectors.toList()),
+                Arrays.stream(Permission.values()).map(permission -> new Option(permission.code, permission.label)).collect(Collectors.toList()));
     }
 
     @PostMapping
@@ -68,10 +70,8 @@ class MenuController {
     Id create(Authentication authentication, @Valid @RequestBody MenuRequest request) {
         access.actor(authentication).require(Permission.MENUS);
         validate(request, null, loadMenus(true));
-        long menuId = insert(values(jdbc.sql("""
-                INSERT INTO fm_menu (parent_id, name, view_key, permission_code, sort_order, enabled)
-                VALUES (:parent, :name, :view, :permission, :sort, :enabled)
-                """), request));
+        long menuId = values(jdbc.sql("INSERT INTO fm_menu (id, parent_id, name, view_key, permission_code, sort_order, enabled)\n"
+                + "VALUES (:newId, :parent, :name, :view, :permission, :sort, :enabled)\n"), request).insert();
         return new Id(menuId);
     }
 
@@ -80,14 +80,12 @@ class MenuController {
     @Transactional
     void update(Authentication authentication, @PathVariable long id, @Valid @RequestBody MenuRequest request) {
         access.actor(authentication).require(Permission.MENUS);
-        var items = loadMenus(true);
+        List<Menu> items = loadMenus(true);
         find(items, id);
         validate(request, id, items);
-        values(jdbc.sql("""
-                UPDATE fm_menu SET parent_id = :parent, name = :name, view_key = :view,
-                    permission_code = :permission, sort_order = :sort, enabled = :enabled
-                WHERE id = :id
-                """), request).param("id", id).update();
+        values(jdbc.sql("UPDATE fm_menu SET parent_id = :parent, name = :name, view_key = :view,\n"
+                + "    permission_code = :permission, sort_order = :sort, enabled = :enabled\n"
+                + "WHERE id = :id\n"), request).param("id", id).update();
     }
 
     @DeleteMapping("/{id}")
@@ -95,7 +93,7 @@ class MenuController {
     @Transactional
     void delete(Authentication authentication, @PathVariable long id) {
         access.actor(authentication).require(Permission.MENUS);
-        var items = loadMenus(true);
+        List<Menu> items = loadMenus(true);
         find(items, id);
         if (items.stream().anyMatch(menu -> Objects.equals(menu.parentId(), id))) {
             throw ApiSupport.conflict("请先移走该菜单下的子菜单");
@@ -113,20 +111,20 @@ class MenuController {
     }
 
     Map<String, List<String>> viewPaths() {
-        var items = loadMenus(false);
-        var byId = new HashMap<Long, Menu>();
+        List<Menu> items = loadMenus(false);
+        HashMap<Long, Menu> byId = new HashMap<>();
         for (Menu item : items) byId.put(item.id(), item);
-        var paths = new HashMap<String, List<String>>();
+        HashMap<String, List<String>> paths = new HashMap<>();
         for (Menu item : items) {
             if (item.viewKey() == null || paths.containsKey(item.viewKey())) continue;
-            var path = new ArrayList<String>();
-            var seen = new HashSet<Long>();
+            ArrayList<String> path = new ArrayList<>();
+            HashSet<Long> seen = new HashSet<>();
             for (Menu node = item; node != null; node = byId.get(node.parentId())) {
                 if (!node.enabled() || !seen.add(node.id())) {
                     path.clear();
                     break;
                 }
-                path.addFirst(node.name());
+                path.add(0, node.name());
             }
             if (!path.isEmpty()) paths.put(item.viewKey(), path);
         }
@@ -134,13 +132,13 @@ class MenuController {
     }
 
     private List<Navigation> visibleChildren(long parent, Map<Long, List<Menu>> groups, AccessService.Actor actor) {
-        var result = new ArrayList<Navigation>();
-        for (Menu menu : groups.getOrDefault(parent, List.of())) {
+        ArrayList<Navigation> result = new ArrayList<>();
+        for (Menu menu : groups.getOrDefault(parent, Collections.emptyList())) {
             if (!menu.enabled() || (menu.permissionCode() != null && !actor.permissions().contains(menu.permissionCode()))) {
                 continue;
             }
             View view = View.find(menu.viewKey());
-            var children = visibleChildren(menu.id(), groups, actor);
+            List<Navigation> children = visibleChildren(menu.id(), groups, actor);
             if ((view == null || !actor.has(view.required)) && children.isEmpty()) {
                 continue;
             }
@@ -169,7 +167,7 @@ class MenuController {
             throw invalidField("permissionCode", "请选择有效的菜单权限");
         }
         Long parent = request.parentId();
-        var seen = new HashSet<Long>();
+        HashSet<Long> seen = new HashSet<>();
         while (parent != null) {
             if (Objects.equals(parent, target) || !seen.add(parent)) {
                 throw invalidField("parentId", "父菜单不能形成循环");
@@ -181,13 +179,13 @@ class MenuController {
     }
 
     private static JdbcClient.StatementSpec values(JdbcClient.StatementSpec statement, MenuRequest request) {
-        return statement.param("parent", request.parentId()).param("name", request.name().strip())
+        return statement.param("parent", request.parentId()).param("name", strip(request.name()))
                 .param("view", clean(request.viewKey())).param("permission", clean(request.permissionCode()))
                 .param("sort", request.sortOrder()).param("enabled", request.enabled());
     }
 
     private static String clean(String value) {
-        return value == null || value.isBlank() ? null : value.strip();
+        return value == null || isBlank(value) ? null : strip(value);
     }
 
     enum View {
@@ -217,10 +215,10 @@ class MenuController {
             this.key = key;
             this.label = label;
             this.required = required;
-            var options = new ArrayList<Permission>();
+            ArrayList<Permission> options = new ArrayList<>();
             options.add(required);
-            options.addAll(List.of(operations));
-            this.permissions = List.copyOf(options);
+            Collections.addAll(options, operations);
+            this.permissions = Collections.unmodifiableList(options);
         }
 
         static View find(String key) {
@@ -228,16 +226,50 @@ class MenuController {
         }
     }
 
-    record Id(long id) {}
-    record Menu(long id, Long parentId, String name, String viewKey, String permissionCode,
-                int sortOrder, boolean enabled) {}
-    record Navigation(long id, String name, String viewKey, List<Navigation> children) {}
-    record Option(String value, String label) {}
-    record MenuOptions(List<Option> views, List<Option> permissions) {}
-    record MenuRequest(@Positive Long parentId,
-                       @NotBlank(message = "请输入菜单名称") @Size(max = 60) String name,
-                       @Size(max = 32) String viewKey,
-                       @Size(max = 48) String permissionCode,
-                       @NotNull Integer sortOrder,
-                       @NotNull Boolean enabled) {}
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Id {
+        long id;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Menu {
+        long id;
+        Long parentId;
+        String name;
+        String viewKey;
+        String permissionCode;
+        int sortOrder;
+        boolean enabled;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Navigation {
+        long id;
+        String name;
+        String viewKey;
+        List<Navigation> children;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Option {
+        String value;
+        String label;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class MenuOptions {
+        List<Option> views;
+        List<Option> permissions;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class MenuRequest {
+        @Positive Long parentId;
+        @NotBlank(message = "请输入菜单名称") @Size(max = 60) String name;
+        @Size(max = 32) String viewKey;
+        @Size(max = 48) String permissionCode;
+        @NotNull Integer sortOrder;
+        @NotNull Boolean enabled;
+    }
 }

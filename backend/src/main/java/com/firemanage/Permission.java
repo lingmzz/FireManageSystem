@@ -1,6 +1,7 @@
 package com.firemanage;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -40,5 +41,5 @@ enum Permission {
     }
 
     static final Set<String> ALL_CODES = Arrays.stream(values())
-            .map(permission -> permission.code).collect(Collectors.toUnmodifiableSet());
+            .map(permission -> permission.code).collect(Collectors.collectingAndThen(Collectors.toSet(), Collections::unmodifiableSet));
 }

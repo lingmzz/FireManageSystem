@@ -1,17 +1,21 @@
 package com.firemanage;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import lombok.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,13 +24,26 @@ import org.springframework.web.server.ResponseStatusException;
 final class ApiSupport {
     private ApiSupport() {}
 
-    record Page<T>(List<T> items, long total, int page, int size) {}
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Page<T> {
+        List<T> items;
+        long total;
+        int page;
+        int size;
+    }
 
-    record Paging(int page, int size) {
-        Paging {
+    @Value
+    static class Paging {
+        int page;
+        int size;
+
+        Paging(int page, int size) {
             if (page < 1 || size < 1 || size > 100) {
                 throw bad("请使用有效的页码与每页条数");
             }
+            this.page = page;
+            this.size = size;
         }
 
         long offset() {
@@ -36,12 +53,6 @@ final class ApiSupport {
         <T> Page<T> result(List<T> items, long total) {
             return new Page<>(items, total, page, size);
         }
-    }
-
-    static long insert(JdbcClient.StatementSpec statement) {
-        var key = new GeneratedKeyHolder();
-        statement.update(key);
-        return Objects.requireNonNull(key.getKey()).longValue();
     }
 
     static ResponseStatusException bad(String message) {
@@ -61,9 +72,7 @@ final class ApiSupport {
     }
 
     private static ResponseStatusException fieldError(HttpStatus status, String field, String message) {
-        var failure = new ResponseStatusException(status, message);
-        failure.getBody().setProperty("fieldErrors", Map.of(field, message));
-        return failure;
+        return new FieldFailure(status, message, Collections.singletonMap(field, message));
     }
 
     static ResponseStatusException missing(String message) {
@@ -77,41 +86,61 @@ final class ApiSupport {
     static ResponseStatusException unauthorized(String message) {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
     }
+
+    static final class FieldFailure extends ResponseStatusException {
+        final Map<String, String> fields;
+
+        private FieldFailure(HttpStatus status, String message, Map<String, String> fields) {
+            super(status, message);
+            this.fields = fields;
+        }
+    }
 }
 
 @RestControllerAdvice
 class ApiErrors {
     @ExceptionHandler(ResponseStatusException.class)
-    ProblemDetail status(ResponseStatusException failure) {
-        return failure.getBody();
+    ResponseEntity<Map<String, Object>> status(ResponseStatusException failure) {
+        Map<String, String> fields = failure instanceof ApiSupport.FieldFailure
+                ? ((ApiSupport.FieldFailure) failure).fields : Collections.emptyMap();
+        return problem(failure.getStatus(), failure.getReason(), fields);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    ProblemDetail validation(MethodArgumentNotValidException failure) {
-        var fields = new LinkedHashMap<String, String>();
-        for (var error : failure.getBindingResult().getFieldErrors()) {
+    ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException failure) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        for (FieldError error : failure.getBindingResult().getFieldErrors()) {
             String name = error.getField().replaceAll("\\[[^\\]]*]", "");
             fields.putIfAbsent(name, error.getDefaultMessage());
         }
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
-                fields.isEmpty() ? "请检查表单内容" : fields.sequencedValues().getFirst());
-        if (!fields.isEmpty()) problem.setProperty("fieldErrors", fields);
-        return problem;
+        String detail = fields.isEmpty() ? "请检查表单内容" : fields.values().iterator().next();
+        return problem(HttpStatus.BAD_REQUEST, detail, fields);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    ProblemDetail malformed(HttpMessageNotReadableException failure) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "请求格式有误");
-        if (failure.getCause() instanceof JsonMappingException mapping) {
-            var path = mapping.getPath().stream().map(JsonMappingException.Reference::getFieldName)
-                    .filter(Objects::nonNull).toList();
-            if (!path.isEmpty()) problem.setProperty("fieldErrors", Map.of(String.join(".", path), "请填写有效的值"));
+    ResponseEntity<Map<String, Object>> malformed(HttpMessageNotReadableException failure) {
+        Map<String, String> fields = Collections.emptyMap();
+        if (failure.getCause() instanceof JsonMappingException) {
+            JsonMappingException mapping = (JsonMappingException) failure.getCause();
+            List<String> path = mapping.getPath().stream().map(JsonMappingException.Reference::getFieldName)
+                    .filter(Objects::nonNull).collect(Collectors.toList());
+            if (!path.isEmpty()) fields = Collections.singletonMap(String.join(".", path), "请填写有效的值");
         }
-        return problem;
+        return problem(HttpStatus.BAD_REQUEST, "请求格式有误", fields);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    ProblemDetail conflict() {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "记录已存在或仍被其他记录使用");
+    ResponseEntity<Map<String, Object>> conflict() {
+        return problem(HttpStatus.CONFLICT, "记录已存在或仍被其他记录使用", Collections.emptyMap());
+    }
+
+    private static ResponseEntity<Map<String, Object>> problem(HttpStatus status, String detail, Map<String, String> fields) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("type", "about:blank");
+        body.put("title", status.getReasonPhrase());
+        body.put("status", status.value());
+        body.put("detail", detail);
+        if (!fields.isEmpty()) body.put("fieldErrors", fields);
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(body);
     }
 }

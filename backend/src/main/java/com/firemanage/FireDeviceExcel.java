@@ -1,6 +1,7 @@
 package com.firemanage;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -10,12 +11,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.LongFunction;
 import java.util.stream.Collectors;
 
-import jakarta.validation.Validator;
+import javax.validation.ConstraintViolation;
+import javax.validation.Validator;
+
+import lombok.Value;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.xssf.streaming.SXSSFSheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,6 +33,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static com.firemanage.ApiSupport.bad;
 import static com.firemanage.FireDeviceController.clean;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Component
 class FireDeviceExcel {
@@ -44,30 +55,30 @@ class FireDeviceExcel {
                 || !file.getOriginalFilename().toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
             throw bad("请选择有效的 .xlsx 设备台账文件");
         }
-        try (var stream = file.getInputStream(); var book = new XSSFWorkbook(stream)) {
+        try (InputStream stream = file.getInputStream(); XSSFWorkbook book = new XSSFWorkbook(stream)) {
             if (book.getNumberOfSheets() == 0) throw bad("设备导入表为空");
             Sheet sheet = book.getSheetAt(0);
             if (sheet.getLastRowNum() > 10000) throw bad("每次最多导入 10000 台设备");
-            var formatter = new DataFormatter(Locale.ROOT);
+            DataFormatter formatter = new DataFormatter(Locale.ROOT);
             Row header = sheet.getRow(0);
             for (int column = 0; column < INPUT.length; column++) {
                 if (!INPUT[column].equals(text(header, column, formatter))) {
                     throw bad("设备导入表头不匹配，请使用系统模板");
                 }
             }
-            var result = new ArrayList<Imported>();
+            ArrayList<Imported> result = new ArrayList<>();
             for (int index = 1; index <= sheet.getLastRowNum(); index++) {
                 Row row = sheet.getRow(index);
                 if (row == null || blank(row, formatter)) continue;
                 try {
-                    var code = text(row, 0, formatter);
-                    var unit = unitCodes.get(code == null ? "" : code.toUpperCase(Locale.ROOT));
+                    String code = text(row, 0, formatter);
+                    Long unit = unitCodes.get(code == null ? "" : code.toUpperCase(Locale.ROOT));
                     if (unit == null) throw bad("单位编号不存在或无导入权限");
-                    var input = new FireDeviceController.Input(unit, text(row, 1, formatter),
+                    FireDeviceController.Input input = new FireDeviceController.Input(unit, text(row, 1, formatter),
                             category(text(row, 2, formatter)), text(row, 3, formatter), text(row, 4, formatter),
                             text(row, 5, formatter), text(row, 6, formatter), text(row, 7, formatter),
                             date(row, 8, formatter), date(row, 9, formatter), date(row, 10, formatter), null);
-                    var issues = validator.validate(input);
+                    Set<ConstraintViolation<FireDeviceController.Input>> issues = validator.validate(input);
                     if (!issues.isEmpty()) throw bad("必填字段缺失或字段超长，请检查设备编号、品名和存放地点");
                     result.add(new Imported(index + 1, input));
                 } catch (ResponseStatusException error) {
@@ -84,8 +95,8 @@ class FireDeviceExcel {
     }
 
     void writeTemplate(OutputStream output) throws IOException {
-        try (var book = new XSSFWorkbook()) {
-            var sheet = book.createSheet("设备台账");
+        try (XSSFWorkbook book = new XSSFWorkbook()) {
+            XSSFSheet sheet = book.createSheet("设备台账");
             headings(book, sheet, false);
             book.write(output);
         }
@@ -93,23 +104,23 @@ class FireDeviceExcel {
 
     void writeExport(OutputStream output, LongFunction<List<FireDeviceController.Device>> loadBatch,
                      LocalDate today) throws IOException {
-        try (var book = new SXSSFWorkbook(100)) {
+        try (SXSSFWorkbook book = new SXSSFWorkbook(100)) {
             book.setCompressTempFiles(true);
-            var sheet = book.createSheet("设备台账");
+            SXSSFSheet sheet = book.createSheet("设备台账");
             headings(book, sheet, true);
             long cursor = 0L;
             int rowIndex = 1;
             List<FireDeviceController.Device> devices;
             while (!(devices = loadBatch.apply(cursor)).isEmpty()) {
-                for (var device : devices) {
-                    var reminders = FireReminder.forDevice(device.state(), device.expiresOn(), device.inspectedOn(), today)
+                for (FireDeviceController.Device device : devices) {
+                    String reminders = FireReminder.forDevice(device.state(), device.expiresOn(), device.inspectedOn(), today)
                             .stream().map(notice -> notice.label).collect(Collectors.joining("；"));
-                    var values = new String[]{
+                    String[] values = new String[]{
                             device.unitCode(), device.code(), device.category().label, device.itemName(), device.modelType(),
                             device.specification(), device.useSite(), device.storageLocation(),
                             Objects.toString(device.manufacturedOn(), ""), Objects.toString(device.inspectedOn(), ""),
                             Objects.toString(device.expiresOn(), ""), device.unitName(),
-                            switch (device.state()) { case 0 -> "已报废"; case 1 -> "在用"; default -> "库存"; },
+                            stateLabel(device.state()),
                             reminders, device.createdRole(), Objects.toString(device.createdAt(), "")
                     };
                     Row row = sheet.createRow(rowIndex++);
@@ -124,11 +135,11 @@ class FireDeviceExcel {
     }
 
     private static void headings(Workbook book, Sheet sheet, boolean report) {
-        var bold = book.createFont();
+        Font bold = book.createFont();
         bold.setBold(true);
-        var headerStyle = book.createCellStyle();
+        CellStyle headerStyle = book.createCellStyle();
         headerStyle.setFont(bold);
-        var textStyle = book.createCellStyle();
+        CellStyle textStyle = book.createCellStyle();
         textStyle.setDataFormat(book.createDataFormat().getFormat("@"));
         Row row = sheet.createRow(0);
         int count = report ? INPUT.length + REPORT.length : INPUT.length;
@@ -145,7 +156,7 @@ class FireDeviceExcel {
     private static boolean blank(Row row, DataFormatter formatter) {
         for (int i = 0; i < INPUT.length; i++) {
             Cell cell = row.getCell(i);
-            if (cell != null && !formatter.formatCellValue(cell).isBlank()) return false;
+            if (cell != null && !isBlank(formatter.formatCellValue(cell))) return false;
         }
         return true;
     }
@@ -172,12 +183,27 @@ class FireDeviceExcel {
     }
 
     private static FireDeviceController.Category category(String label) {
-        for (var category : FireDeviceController.Category.values()) {
+        for (FireDeviceController.Category category : FireDeviceController.Category.values()) {
             if (category.label.equals(label) || category.name().equals(label)) return category;
         }
         throw bad("设备类别不在设备字典中");
     }
 
-    record Imported(int number, FireDeviceController.Input input) {}
+    private static String stateLabel(int state) {
+        switch (state) {
+            case 0:
+                return "已报废";
+            case 1:
+                return "在用";
+            default:
+                return "库存";
+        }
+    }
+
+    @Value
+    static class Imported {
+        int number;
+        FireDeviceController.Input input;
+    }
 
 }

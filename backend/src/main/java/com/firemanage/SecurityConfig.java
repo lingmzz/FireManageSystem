@@ -1,11 +1,12 @@
 package com.firemanage;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletResponse;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -30,7 +31,8 @@ class SecurityConfig {
 
     @Bean
     AuthenticationManager authenticationManager(AccessService access, PasswordEncoder passwordEncoder) {
-        var provider = new DaoAuthenticationProvider(access);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(access);
         provider.setPasswordEncoder(passwordEncoder);
         return new ProviderManager(provider);
     }
@@ -53,8 +55,8 @@ class SecurityConfig {
                 .csrf(csrf -> csrf.csrfTokenRepository(csrfRepository))
                 .requestCache(cache -> cache.disable())
                 .authorizeHttpRequests(requests -> requests
-                        .requestMatchers("/", "/index.html", "/favicon.svg", "/assets/**", "/error").permitAll()
-                        .requestMatchers("/api/auth/csrf", "/api/auth/login").permitAll()
+                        .antMatchers("/", "/index.html", "/favicon.svg", "/assets/**", "/error").permitAll()
+                        .antMatchers("/api/auth/csrf", "/api/auth/login").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, error) ->
@@ -70,6 +72,9 @@ class SecurityConfig {
             throws IOException {
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        mapper.writeValue(response.getOutputStream(), Map.of("status", status, "detail", message));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", status);
+        body.put("detail", message);
+        mapper.writeValue(response.getOutputStream(), body);
     }
 }

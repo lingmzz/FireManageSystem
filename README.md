@@ -1,90 +1,60 @@
 # 消防管理系统
 
-管理消防设备台账、维保单位、应急演练和隐患整改。后端使用 Spring Boot 和 MySQL，前端使用 Vue 3 和 shadcn-vue。构建后，前端随 Java 应用一起运行。
+管理消防设备台账、维保单位、应急演练和隐患整改。后端使用 JDK 8、Spring Boot 2.7 和 Oracle 10g，前端使用 Vue 3 和 shadcn-vue。构建后，前端随 Java 应用一起运行。
 
-## Windows 本地启动
+## Windows 本地构建
 
 | 工具 | 要求 |
 | --- | --- |
 | Git | 用于克隆项目 |
 | PowerShell | 7.2 或以上，使用 `pwsh` 运行脚本 |
-| Java | JDK 21，将 `JAVA_HOME` 指向 JDK 安装目录 |
+| Java | JDK 8，将 `JAVA_HOME` 指向 JDK 安装目录 |
 | Maven | 3.9，确保 `mvn.cmd` 在 `PATH` 上 |
-| Node.js 和 pnpm | Node.js 24，确保 `node.exe` 在 `PATH` 上。用 `npm.cmd install --global pnpm@10.24.0` 安装 pnpm |
-| MySQL | MySQL Community Server 8.0 的 Windows 版本，安装目录下有 `bin\mysqld.exe` 和 `bin\mysql.exe` |
-
-打开 PowerShell 7，克隆后进入项目根目录。把 `FIRE_MYSQL_HOME` 改为自己电脑上的 MySQL 安装目录。如果 `mysqld.exe` 已在 `PATH` 上，可以省略这一行。
+| Node.js 和 pnpm | Node.js 24 和 pnpm 10.24.0。可用 `npm.cmd install --global pnpm@10.24.0` 安装 pnpm |
 
 ```powershell
 git clone https://github.com/lingmzz/FireManageSystem.git
 Set-Location FireManageSystem
-$env:FIRE_MYSQL_HOME = 'C:\Program Files\MySQL\MySQL Server 8.0'
 .\Build-Local.ps1
-.\Start-Local.ps1
 ```
 
-首次构建会下载依赖并运行后端测试。启动脚本会在 `.local/mysql-data` 建立独立的 MySQL 实例，应用自动建表并创建初始角色、菜单和管理员。以后使用同一个目录启动时会继续使用已有数据库。
+构建会运行后端测试，无需数据库服务器。应用运行时通过 JDBC Thin 连接已有的 Oracle 10g，本机只需安装上表所列的工具。
 
-打开 [消防管理系统](http://127.0.0.1:48080/)，用 `admin` 和 `.local/admin-credentials.txt` 内随机生成的密码首次登录。可在登录后修改密码，该文件记录的是首次生成的值。
+## 初始化远程 Oracle 10g
 
-## 初始化和配置
+1. 请数据库管理员在已有实例上为应用准备独立账户，授予 `CREATE SESSION`、`CREATE TABLE` 和 `CREATE SEQUENCE` 权限，并分配表空间配额。建议数据库使用支持中文的字符集，比如 `AL32UTF8`。
+2. 首次部署时，用应用账号在空 schema 中执行 [Oracle 建表脚本](backend/src/main/resources/schema.sql)。脚本创建数据表、索引、主键序列和审批流程的基础配置。
+3. 首次启动时设置 `FIRE_BOOTSTRAP_PASSWORD`，至少 10 位。应用在空库内创建 `admin`、角色和菜单。后续启动沿用库中的账号。
 
-| 配置 | 默认值或位置 |
-| --- | --- |
-| 应用地址 | `http://127.0.0.1:48080/` |
-| 项目数据库 | `127.0.0.1:13306` 上的 `fire_manage` |
-| 应用数据库配置 | `.local/application-local.yaml`，首次初始化时生成 |
-| 初始化脚本 | [scripts/Initialize-Database.ps1](scripts/Initialize-Database.ps1)，也可单独运行以启动项目数据库 |
-| 数据库表结构 | [schema.sql](backend/src/main/resources/schema.sql)，由 Spring Boot 在启动时执行 |
-| 演练附件 | `.local/fire-drill-files/` |
-| 启动日志 | `.local/logs/`，应用看 `app.log`，数据库看 `mysql-error.log` |
+已有 MySQL 数据时，先备份数据库和 `.local/fire-drill-files/`。如需保留历史数据，须单独导入 Oracle，保留记录 ID 和关联关系，并将 `fm_id_seq` 的起始值设为大于已导入的最大 ID。迁移已有管理员时，首次登录继续使用数据库中的原密码。
 
-端口冲突时，可以为新建的本地实例指定端口。之后启动该数据库时，使用首次初始化时的 `-MySqlPort`。
+## 连接 Oracle 并启动
+
+将示例中的主机、端口、服务名和账号替换为数据库管理员提供的值。使用 Service Name 时，连接格式为 `jdbc:oracle:thin:@//主机:端口/服务名`。使用 SID 时，格式为 `jdbc:oracle:thin:@主机:端口:SID`。
 
 ```powershell
-.\Start-Local.ps1 -AppPort 48081 -MySqlPort 13307
-```
-
-`.local/` 保存数据库、附件和随机生成的凭据，`.tools/` 保存可选的本机工具与依赖缓存。这两个目录均通过 Git 忽略。迁移本机数据时，先关闭服务并备份数据库与附件，再把数据导入新环境。
-
-### 停止本地服务
-
-后台应用的进程号记录在 `.local/logs/app.pid`。在任务管理器中找到该进程，确认命令行包含本项目的 `fire-manage.jar` 后结束它。然后在项目根目录正常关闭项目 MySQL。
-
-```powershell
-& "$env:FIRE_MYSQL_HOME\bin\mysqladmin.exe" '--defaults-file=.local/mysql-admin.cnf' shutdown
-```
-
-如果使用 `PATH` 查找 MySQL，直接运行 `mysqladmin.exe` 并传入同样的参数。
-
-### 使用已有的 MySQL 实例
-
-通过 MySQL 管理员在本机实例上执行以下语句。`IDENTIFIED BY RANDOM PASSWORD` 会返回应用数据库用户的密码。若已有该用户，可复用现有用户名和密码。
-
-```sql
-CREATE DATABASE IF NOT EXISTS fire_manage CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-CREATE USER 'fire_manage'@'127.0.0.1' IDENTIFIED BY RANDOM PASSWORD;
-GRANT ALL PRIVILEGES ON fire_manage.* TO 'fire_manage'@'127.0.0.1';
-```
-
-构建后使用 [外部数据库配置模板](config/application-external.example.yml) 启动应用。模板默认连接 `127.0.0.1:3306` 上的 `fire_manage`。库名、地址或用户名不同时，可在启动前设置 `FIRE_DB_URL` 和 `FIRE_DB_USER`。管理员初始密码至少 10 位，仅在空库首次启动时使用。
-
-```powershell
-.\Build-Local.ps1
+$env:FIRE_DB_URL = 'jdbc:oracle:thin:@//db.example.com:1521/FIREDB'
+$env:FIRE_DB_USER = 'fire_manage'
 $env:FIRE_DB_PASSWORD = Read-Host '输入应用数据库用户密码' -MaskInput
-$env:FIRE_BOOTSTRAP_PASSWORD = Read-Host '设置初始管理员密码' -MaskInput
 try {
-    & "$env:JAVA_HOME\bin\java.exe" -jar .\backend\target\fire-manage.jar '--spring.config.additional-location=file:./config/application-external.example.yml'
+    # 只在空库首次启动时设置初始管理员密码
+    $env:FIRE_BOOTSTRAP_PASSWORD = Read-Host '设置初始管理员密码' -MaskInput
+    .\Start-Local.ps1
 } finally {
     Remove-Item Env:FIRE_DB_PASSWORD, Env:FIRE_BOOTSTRAP_PASSWORD -ErrorAction SilentlyContinue
 }
 ```
 
-使用这个命令时，应用在当前终端运行，按 `Ctrl+C` 可退出。
+启动后打开 [消防管理系统](http://127.0.0.1:48080/)。首次使用 `admin` 和上一步设定的密码登录。
+
+- 默认数据库配置见 [外部数据库配置模板](config/application-external.example.yml)。也可把配置放到 Git 忽略的 `.local/`，通过 `.\Start-Local.ps1 -DatabaseConfig .\.local\application-oracle.yml` 加载。
+- 端口冲突时，使用 `.\Start-Local.ps1 -AppPort 48081` 指定应用端口。
+- 日志位于 `.local/logs/`，查看 `app.log` 和 `app-error.log`。停止时，根据 `.local/logs/app.pid` 找到进程，确认命令行包含本项目的 `fire-manage.jar` 后结束该进程。
+- `.local/` 保存应用日志和演练附件，`.tools/` 可保存本机工具与依赖缓存，两个目录均由 Git 忽略。
 
 ## 开发
 
-- `backend/` 是后端，`frontend/` 是前端。修改后先停止后台应用，然后在项目根目录运行 `.\Build-Local.ps1` 和 `.\Start-Local.ps1`。可执行包位于 `backend/target/fire-manage.jar`。
+- `backend/` 是后端，`frontend/` 是前端。修改后先停止后台应用，然后运行 `.\Build-Local.ps1` 和 `.\Start-Local.ps1`。可执行包位于 `backend/target/fire-manage.jar`。
 - 本机已有全部依赖时，可以运行 `.\Build-Local.ps1 -Offline`。`-Online` 与默认构建行为相同。
 - 需要前端热更新时，在默认端口启动后端，然后在 `frontend/` 内运行 `pnpm.cmd dev`，打开 [Vite 开发地址](http://127.0.0.1:5173/)。Vite 会将 `/api` 转发到本机的 `48080` 端口。
 

@@ -1,15 +1,15 @@
 function Get-LocalJavaHome([string]$Root) {
-    $javaHome = Join-Path $Root '.tools/jdk21'
+    $javaHome = Join-Path $Root '.tools/jdk8'
     if (!(Test-Path -LiteralPath (Join-Path $javaHome 'bin/javac.exe') -PathType Leaf)) {
         $javaHome = $env:JAVA_HOME
     }
     if (!$javaHome -or !(Test-Path -LiteralPath (Join-Path $javaHome 'bin/javac.exe') -PathType Leaf)) {
-        throw '请安装 JDK 21，并将 JAVA_HOME 设置到 JDK 安装目录。'
+        throw '请安装 JDK 8，并将 JAVA_HOME 设置到 JDK 安装目录。'
     }
     $release = Join-Path $javaHome 'release'
     if (!(Test-Path -LiteralPath $release -PathType Leaf) -or
-        !(Select-String -LiteralPath $release -Pattern '^JAVA_VERSION="21(?:[."+-])' -Quiet)) {
-        throw '当前使用的 JDK 不是 21，请检查 JAVA_HOME 或 .tools/jdk21。'
+        !(Select-String -LiteralPath $release -Pattern '^JAVA_VERSION="1\.8(?:[._"+-])' -Quiet)) {
+        throw '请将 JAVA_HOME 或 .tools/jdk8 指向 JDK 8 安装目录。'
     }
     return $javaHome
 }

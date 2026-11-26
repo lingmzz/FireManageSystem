@@ -1,7 +1,7 @@
 package com.firemanage;
 
 import java.time.LocalDate;
-import java.util.List;
+import java.util.Collections;
 
 import org.junit.jupiter.api.Test;
 
@@ -16,20 +16,20 @@ class FireRequirementsTest {
 
     @Test
     void expiryBandUsesTheClosestDeadlineAndIncludesStock() {
-        assertEquals(List.of(SIX_MONTHS), FireReminder.forDevice(2, today.plusMonths(6), null, today));
-        assertEquals(List.of(THREE_MONTHS), FireReminder.forDevice(2, today.plusMonths(3), null, today));
-        assertEquals(List.of(THREE_MONTHS), FireReminder.forDevice(2, today, null, today));
-        assertEquals(List.of(EXPIRED), FireReminder.forDevice(2, today.minusDays(1), null, today));
-        assertEquals(List.of(), FireReminder.forDevice(2, today.plusMonths(6).plusDays(1), null, today));
+        assertEquals(Collections.singletonList(SIX_MONTHS), FireReminder.forDevice(2, today.plusMonths(6), null, today));
+        assertEquals(Collections.singletonList(THREE_MONTHS), FireReminder.forDevice(2, today.plusMonths(3), null, today));
+        assertEquals(Collections.singletonList(THREE_MONTHS), FireReminder.forDevice(2, today, null, today));
+        assertEquals(Collections.singletonList(EXPIRED), FireReminder.forDevice(2, today.minusDays(1), null, today));
+        assertEquals(Collections.emptyList(), FireReminder.forDevice(2, today.plusMonths(6).plusDays(1), null, today));
     }
 
     @Test
     void annualInspectionOnlyAppliesToEquipmentInUse() {
-        assertEquals(List.of(), FireReminder.forDevice(0, today.minusDays(1), null, today));
-        assertEquals(List.of(), FireReminder.forDevice(2, null, null, today));
-        assertEquals(List.of(UNINSPECTED), FireReminder.forDevice(1, null, null, today));
-        assertEquals(List.of(INSPECTION), FireReminder.forDevice(1, null, today.minusYears(1), today));
-        assertEquals(List.of(EXPIRED), FireReminder.forDevice(1, today.minusDays(1), today, today));
+        assertEquals(Collections.emptyList(), FireReminder.forDevice(0, today.minusDays(1), null, today));
+        assertEquals(Collections.emptyList(), FireReminder.forDevice(2, null, null, today));
+        assertEquals(Collections.singletonList(UNINSPECTED), FireReminder.forDevice(1, null, null, today));
+        assertEquals(Collections.singletonList(INSPECTION), FireReminder.forDevice(1, null, today.minusYears(1), today));
+        assertEquals(Collections.singletonList(EXPIRED), FireReminder.forDevice(1, today.minusDays(1), today, today));
     }
 
     @Test

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateRange(1024, 65535)][int]$MySqlPort = 13306,
-    [ValidateRange(1024, 65535)][int]$AppPort = 48080
+    [ValidateRange(1024, 65535)][int]$AppPort = 48080,
+    [string]$DatabaseConfig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,6 @@ $homeUrl = "http://127.0.0.1:$AppPort/"
 if (!(Test-Path -LiteralPath $jar -PathType Leaf)) {
     throw '请先运行 Build-Local.ps1 构建项目。'
 }
-if ($AppPort -eq $MySqlPort) { throw '应用端口和 MySQL 端口必须不同。' }
 $java = Join-Path (Get-LocalJavaHome $PSScriptRoot) 'bin/java.exe'
 
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
@@ -35,10 +34,20 @@ try {
         }
     }
 
-    & (Join-Path $PSScriptRoot 'scripts/Initialize-Database.ps1') -MySqlPort $MySqlPort
     if (!$alreadyRunning) {
+        if (!$DatabaseConfig) {
+            if ($env:FIRE_DB_URL -notlike 'jdbc:oracle:thin:@*' -or
+                [string]::IsNullOrWhiteSpace($env:FIRE_DB_USER) -or [string]::IsNullOrEmpty($env:FIRE_DB_PASSWORD)) {
+                throw '请设置 Oracle 连接所需的 FIRE_DB_URL、FIRE_DB_USER 和 FIRE_DB_PASSWORD，或传入 -DatabaseConfig。'
+            }
+            $DatabaseConfig = Join-Path $PSScriptRoot 'config/application-external.example.yml'
+        }
+        if (!(Test-Path -LiteralPath $DatabaseConfig -PathType Leaf)) {
+            throw "找不到数据库配置文件 $DatabaseConfig。"
+        }
+        $configUri = ([uri](Resolve-Path -LiteralPath $DatabaseConfig).Path).AbsoluteUri
         $arguments = @('-Dfile.encoding=UTF-8', '-jar', $jar,
-            '--spring.config.additional-location=file:./.local/application-local.yaml', "--server.port=$AppPort")
+            "--spring.config.additional-location=$configUri", "--server.port=$AppPort")
         $app = Start-LocalProcess 'app' $java $arguments $PSScriptRoot $logs
         $ready = $false
         for ($attempt = 0; $attempt -lt 90; $attempt++) {
@@ -60,7 +69,6 @@ try {
     }
 
     Write-Output "消防管理系统 $homeUrl"
-    Write-Output '首次登录信息见 .local/admin-credentials.txt。'
 } finally {
     $lock.Dispose()
 }

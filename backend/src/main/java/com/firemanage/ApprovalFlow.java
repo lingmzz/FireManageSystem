@@ -1,29 +1,36 @@
 package com.firemanage;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
+import javax.validation.constraints.Positive;
+import javax.validation.constraints.Size;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import lombok.Value;
 
 import static com.firemanage.ApiSupport.invalidField;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.strip;
 
 final class ApprovalFlow {
     private ApprovalFlow() {}
 
     enum Type {
-        WORKBENCH("工作台", Permission.APPROVAL_READ, List.of(UnitScope.NONE)),
+        WORKBENCH("工作台", Permission.APPROVAL_READ, Collections.singletonList(UnitScope.NONE)),
         STATION_HAZARD("车站隐患", Permission.FIRE_HAZARD_READ,
-                List.of(UnitScope.OWN_UNIT, UnitScope.DEPARTMENT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT)),
+                Collections.unmodifiableList(Arrays.asList(UnitScope.OWN_UNIT, UnitScope.DEPARTMENT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT))),
         DEPARTMENT_HAZARD("科室隐患", Permission.FIRE_HAZARD_READ,
-                List.of(UnitScope.OWN_UNIT, UnitScope.DEPARTMENT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT)),
+                Collections.unmodifiableList(Arrays.asList(UnitScope.OWN_UNIT, UnitScope.DEPARTMENT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT))),
         SEGMENT_HAZARD("段级直属隐患", Permission.FIRE_HAZARD_READ,
-                List.of(UnitScope.OWN_UNIT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT));
+                Collections.unmodifiableList(Arrays.asList(UnitScope.OWN_UNIT, UnitScope.SEGMENT, UnitScope.VISIBLE_UNIT)));
 
         final String label;
         final Permission reader;
@@ -36,11 +43,16 @@ final class ApprovalFlow {
         }
 
         static Type hazard(FireAccess.Kind kind) {
-            return switch (kind) {
-                case STATION -> STATION_HAZARD;
-                case DEPARTMENT -> DEPARTMENT_HAZARD;
-                case SEGMENT -> SEGMENT_HAZARD;
-            };
+            switch (kind) {
+                case STATION:
+                    return STATION_HAZARD;
+                case DEPARTMENT:
+                    return DEPARTMENT_HAZARD;
+                case SEGMENT:
+                    return SEGMENT_HAZARD;
+                default:
+                    throw new AssertionError(kind);
+            }
         }
     }
 
@@ -60,41 +72,59 @@ final class ApprovalFlow {
         boolean allows(FireAccess.Scope scope, Long unitId) {
             if (this == NONE) return unitId == null;
             if (scope == null || unitId == null) return false;
-            return switch (this) {
-                case OWN_UNIT -> scope.owns(unitId);
-                case DEPARTMENT -> scope.hasCoverage(unitId, FireAccess.Kind.DEPARTMENT);
-                case SEGMENT -> scope.hasCoverage(unitId, FireAccess.Kind.SEGMENT);
-                case VISIBLE_UNIT -> scope.canSee(unitId);
-                case NONE -> false;
-            };
+            switch (this) {
+                case OWN_UNIT:
+                    return scope.owns(unitId);
+                case DEPARTMENT:
+                    return scope.hasCoverage(unitId, FireAccess.Kind.DEPARTMENT);
+                case SEGMENT:
+                    return scope.hasCoverage(unitId, FireAccess.Kind.SEGMENT);
+                case VISIBLE_UNIT:
+                    return scope.canSee(unitId);
+                case NONE:
+                    return false;
+                default:
+                    throw new AssertionError(this);
+            }
         }
     }
 
     private static final String STEP_KEY = "[a-z0-9_-]{1,24}";
 
-    record Draft(@Pattern(regexp = STEP_KEY) String startKey,
-                 @NotNull @Size(max = 20, message = "流程最多设置 20 个步骤") List<@NotNull @Valid Step> steps) {}
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Draft {
+        @Pattern(regexp = STEP_KEY) String startKey;
+        @NotNull @Size(max = 20, message = "流程最多设置 20 个步骤") List<@NotNull @Valid Step> steps;
+    }
 
-    record Step(@NotNull @Pattern(regexp = STEP_KEY) String key,
-                @Size(max = 80, message = "步骤名称最多 80 个字符") String name,
-                @Positive Long roleId, UnitScope unitScope, boolean assigneeOnly,
-                @Size(max = 30, message = "通过按钮文字最多 30 个字符") String passLabel,
-                boolean remarkRequired, @Pattern(regexp = STEP_KEY) String passTo,
-                @Pattern(regexp = STEP_KEY) String returnTo) {
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Step {
+        @NotNull @Pattern(regexp = STEP_KEY) String key;
+        @Size(max = 80, message = "步骤名称最多 80 个字符") String name;
+        @Positive Long roleId;
+        UnitScope unitScope;
+        boolean assigneeOnly;
+        @Size(max = 30, message = "通过按钮文字最多 30 个字符") String passLabel;
+        boolean remarkRequired;
+        @Pattern(regexp = STEP_KEY) String passTo;
+        @Pattern(regexp = STEP_KEY) String returnTo;
+
         String field(String name) {
             return "step." + key + "." + name;
         }
 
         String actionLabel() {
-            return passLabel == null || passLabel.isBlank() ? "通过" : passLabel.strip();
+            return passLabel == null || isBlank(passLabel) ? "通过" : strip(passLabel);
         }
     }
 
     static void validate(Type type, Draft draft) {
-        var steps = new LinkedHashMap<String, Step>();
+        LinkedHashMap<String, Step> steps = new LinkedHashMap<>();
         for (Step step : draft.steps()) {
             if (steps.put(step.key(), step) != null) throw invalidField("steps", "步骤标识重复，请重新添加该步骤");
-            if (step.name() == null || step.name().isBlank()) {
+            if (step.name() == null || isBlank(step.name())) {
                 throw invalidField(step.field("name"), "请输入步骤名称");
             }
             if (step.roleId() == null) throw invalidField(step.field("roleId"), "请选择办理角色");
@@ -119,7 +149,7 @@ final class ApprovalFlow {
             }
         }
 
-        var order = new HashMap<String, Integer>();
+        HashMap<String, Integer> order = new HashMap<>();
         for (Step step = start; step != null; step = steps.get(step.passTo())) {
             order.put(step.key(), order.size());
             if (order.containsKey(step.passTo())) {
@@ -128,7 +158,7 @@ final class ApprovalFlow {
         }
         for (Step step : steps.values()) {
             if (!order.containsKey(step.key())) {
-                throw invalidField(step.field("passTo"), "从第一个步骤出发无法到达「" + step.name().strip() + "」");
+                throw invalidField(step.field("passTo"), "从第一个步骤出发无法到达「" + strip(step.name()) + "」");
             }
             if (step.returnTo() != null && order.getOrDefault(step.returnTo(), Integer.MAX_VALUE) >= order.get(step.key())) {
                 throw invalidField(step.field("returnTo"), "退回去向请选择流程中已办理的步骤");
@@ -137,23 +167,29 @@ final class ApprovalFlow {
     }
 
     static Draft example(Type type, Map<String, Long> roles) {
-        return switch (type) {
-            case WORKBENCH -> new Draft("assign", List.of(
-                    new Step("assign", "待指派", roles.get("DISPATCHER"), UnitScope.NONE, false,
-                            "指派整改", false, "rectify", null),
-                    new Step("rectify", "待整改", roles.get("RECTIFIER"), UnitScope.NONE, true,
-                            "提交整改", true, "review", null),
-                    new Step("review", "待复核", roles.get("REVIEWER"), UnitScope.NONE, false,
-                            "复核通过", false, null, "rectify")));
-            case STATION_HAZARD -> new Draft("report", List.of(
-                    report(roles.get("FIRE_STATION"), "department"),
-                    new Step("department", "待科室确认", roles.get("FIRE_DEPARTMENT"), UnitScope.DEPARTMENT, false,
-                            "科室确认", false, "close", "report"), close(roles.get("FIRE_SEGMENT"))));
-            case DEPARTMENT_HAZARD -> new Draft("report", List.of(
-                    report(roles.get("FIRE_DEPARTMENT"), "close"), close(roles.get("FIRE_SEGMENT"))));
-            case SEGMENT_HAZARD -> new Draft("report", List.of(
-                    report(roles.get("FIRE_SEGMENT"), "close"), close(roles.get("FIRE_SEGMENT"))));
-        };
+        switch (type) {
+            case WORKBENCH:
+                return new Draft("assign", Collections.unmodifiableList(Arrays.asList(
+                        new Step("assign", "待指派", roles.get("DISPATCHER"), UnitScope.NONE, false,
+                                "指派整改", false, "rectify", null),
+                        new Step("rectify", "待整改", roles.get("RECTIFIER"), UnitScope.NONE, true,
+                                "提交整改", true, "review", null),
+                        new Step("review", "待复核", roles.get("REVIEWER"), UnitScope.NONE, false,
+                                "复核通过", false, null, "rectify"))));
+            case STATION_HAZARD:
+                return new Draft("report", Collections.unmodifiableList(Arrays.asList(
+                        report(roles.get("FIRE_STATION"), "department"),
+                        new Step("department", "待科室确认", roles.get("FIRE_DEPARTMENT"), UnitScope.DEPARTMENT, false,
+                                "科室确认", false, "close", "report"), close(roles.get("FIRE_SEGMENT")))));
+            case DEPARTMENT_HAZARD:
+                return new Draft("report", Collections.unmodifiableList(Arrays.asList(
+                        report(roles.get("FIRE_DEPARTMENT"), "close"), close(roles.get("FIRE_SEGMENT")))));
+            case SEGMENT_HAZARD:
+                return new Draft("report", Collections.unmodifiableList(Arrays.asList(
+                        report(roles.get("FIRE_SEGMENT"), "close"), close(roles.get("FIRE_SEGMENT")))));
+            default:
+                throw new AssertionError(type);
+        }
     }
 
     private static Step report(Long roleId, String next) {

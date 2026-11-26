@@ -1,12 +1,14 @@
 package com.firemanage;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import lombok.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
@@ -28,7 +30,7 @@ class FireAccess {
     }
 
     Scope scope(AccessService.Actor actor) {
-        var directory = new LinkedHashMap<Long, Unit>();
+        LinkedHashMap<Long, Unit> directory = new LinkedHashMap<>();
         for (Unit unit : units()) {
             directory.put(unit.id(), unit);
         }
@@ -37,15 +39,13 @@ class FireAccess {
                     Unit unit = directory.get(id);
                     return unit != null && actor.roles().contains(unit.kind().role);
                 })
-                .collect(Collectors.toUnmodifiableSet());
+                .collect(Collectors.collectingAndThen(Collectors.toSet(), Collections::unmodifiableSet));
         return new Scope(actor, directory, bindings);
     }
 
     List<Unit> units() {
-        return jdbc.sql("""
-                SELECT id, code, name, kind, parent_id FROM fm_fire_unit
-                ORDER BY CASE kind WHEN 'SEGMENT' THEN 1 WHEN 'DEPARTMENT' THEN 2 ELSE 3 END, name, id
-                """).query(Unit.class).list();
+        return jdbc.sql("SELECT id, code, name, kind, parent_id FROM fm_fire_unit\n"
+                + "ORDER BY CASE kind WHEN 'SEGMENT' THEN 1 WHEN 'DEPARTMENT' THEN 2 ELSE 3 END, name, id\n").query(Unit.class).list();
     }
 
     List<Long> bindings(long userId) {
@@ -63,9 +63,22 @@ class FireAccess {
         }
     }
 
-    record Unit(long id, String code, String name, Kind kind, Long parentId) {}
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Unit {
+        long id;
+        String code;
+        String name;
+        Kind kind;
+        Long parentId;
+    }
 
-    record Scope(AccessService.Actor actor, Map<Long, Unit> directory, Set<Long> bindings) {
+    @Value
+    static class Scope {
+        AccessService.Actor actor;
+        Map<Long, Unit> directory;
+        Set<Long> bindings;
+
         Unit requireUnit(long id) {
             Unit unit = directory.get(id);
             if (unit == null) {
@@ -103,17 +116,17 @@ class FireAccess {
         }
 
         List<Unit> visibleUnits() {
-            return directory.values().stream().filter(unit -> canSee(unit.id())).toList();
+            return directory.values().stream().filter(unit -> canSee(unit.id())).collect(Collectors.toList());
         }
 
         List<Long> visibleIds(Long unitId) {
             if (unitId != null) {
                 requireUnit(unitId);
             }
-            var ids = visibleUnits().stream()
+            List<Long> ids = visibleUnits().stream()
                     .filter(unit -> unitId == null || within(unit, unitId))
-                    .map(Unit::id).toList();
-            return ids.isEmpty() ? List.of(-1L) : ids;
+                    .map(Unit::id).collect(Collectors.toList());
+            return ids.isEmpty() ? Collections.singletonList(-1L) : ids;
         }
 
         private boolean within(Unit unit, long ancestorId) {

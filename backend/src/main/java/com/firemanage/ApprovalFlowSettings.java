@@ -6,13 +6,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javax.validation.Valid;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
-
-import org.springframework.jdbc.core.simple.JdbcClient;
+import lombok.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +26,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import static com.firemanage.ApiSupport.conflict;
-import static com.firemanage.ApiSupport.insert;
 import static com.firemanage.ApiSupport.invalidField;
+import static org.apache.commons.lang3.StringUtils.strip;
 
 @RestController
 @RequestMapping("/api/approval-flows")
@@ -53,39 +54,35 @@ class ApprovalFlowSettings {
     Settings save(Authentication auth, @PathVariable ApprovalFlow.Type type, @Valid @RequestBody Edit edit) {
         manager(auth);
         lock(type, edit.revision());
-        jdbc.sql("""
-                UPDATE fm_workflow_config SET draft = :draft, revision = revision + 1 WHERE flow_type = :type
-                """).param("draft", encode(edit.draft())).param("type", type.name()).update();
+        jdbc.sql("UPDATE fm_workflow_config SET draft = :draft, revision = revision + 1 WHERE flow_type = :type")
+                .clob("draft", encode(edit.draft())).param("type", type.name()).update();
         return settings(type);
     }
 
     @PostMapping("/{type}/publish")
     @Transactional(isolation = Isolation.READ_COMMITTED)
     Settings publish(Authentication auth, @PathVariable ApprovalFlow.Type type, @Valid @RequestBody Edit edit) {
-        var actor = manager(auth);
-        var config = lock(type, edit.revision());
+        AccessService.Actor actor = manager(auth);
+        Config config = lock(type, edit.revision());
         ApprovalFlow.validate(type, edit.draft());
-        var ids = edit.draft().steps().stream().map(ApprovalFlow.Step::roleId).distinct().sorted().toList();
-        jdbc.sql("SELECT id FROM fm_role WHERE id IN (:ids) ORDER BY id FOR SHARE")
+        List<Long> ids = edit.draft().steps().stream().map(ApprovalFlow.Step::roleId).distinct().sorted().collect(Collectors.toList());
+        jdbc.sql("SELECT id FROM fm_role WHERE id IN (:ids) ORDER BY id FOR UPDATE")
                 .param("ids", ids).query(Long.class).list();
-        var roles = roles(type).stream().collect(Collectors.toMap(Role::id, Role::name));
-        for (var step : edit.draft().steps()) {
+        Map<Long, String> roles = roles(type).stream().collect(Collectors.toMap(Role::id, Role::name));
+        for (ApprovalFlow.Step step : edit.draft().steps()) {
             if (!roles.containsKey(step.roleId())) {
                 throw invalidField(step.field("roleId"), "请选择拥有此入口查看权限的角色");
             }
         }
 
         int number = config.lastVersion() + 1;
-        long version = insert(jdbc.sql("""
-                INSERT INTO fm_workflow_version (flow_type, version_no, start_key, published_by)
-                VALUES (:type, :number, :start, :publisher)
-                """).param("type", type.name()).param("number", number)
-                .param("start", edit.draft().startKey()).param("publisher", actor.id()));
+        long version = jdbc.sql("INSERT INTO fm_workflow_version (id, flow_type, version_no, start_key, published_by)\n"
+                + "VALUES (:newId, :type, :number, :start, :publisher)\n").param("type", type.name()).param("number", number)
+                .param("start", edit.draft().startKey()).param("publisher", actor.id()).insert();
         saveSteps(version, edit.draft().steps(), roles);
-        jdbc.sql("""
-                UPDATE fm_workflow_config SET active_version_id = :version, last_version = :number,
-                    draft = :draft, revision = revision + 1 WHERE flow_type = :type
-                """).param("version", version).param("number", number).param("draft", encode(edit.draft()))
+        jdbc.sql("UPDATE fm_workflow_config SET active_version_id = :version, last_version = :number,\n"
+                + "    draft = :draft, revision = revision + 1 WHERE flow_type = :type")
+                .param("version", version).param("number", number).clob("draft", encode(edit.draft()))
                 .param("type", type.name()).update();
         return settings(type);
     }
@@ -95,20 +92,19 @@ class ApprovalFlowSettings {
     Settings useBuiltIn(Authentication auth, @PathVariable ApprovalFlow.Type type, @Valid @RequestBody Revision request) {
         manager(auth);
         lock(type, request.revision());
-        jdbc.sql("""
-                UPDATE fm_workflow_config SET active_version_id = NULL, revision = revision + 1 WHERE flow_type = :type
-                """).param("type", type.name()).update();
+        jdbc.sql("UPDATE fm_workflow_config SET active_version_id = NULL, revision = revision + 1 WHERE flow_type = :type\n")
+                .param("type", type.name()).update();
         return settings(type);
     }
 
     private AccessService.Actor manager(Authentication auth) {
-        var actor = access.actor(auth);
+        AccessService.Actor actor = access.actor(auth);
         actor.require(Permission.WORKFLOWS);
         return actor;
     }
 
     private Config lock(ApprovalFlow.Type type, int revision) {
-        var config = config(type, true);
+        Config config = config(type, true);
         if (config.revision() != revision) {
             throw conflict("这套流程已被其他人更新。请重新加载后再保存");
         }
@@ -121,51 +117,45 @@ class ApprovalFlowSettings {
     }
 
     private Settings settings(ApprovalFlow.Type type) {
-        var config = config(type, false);
-        var roles = roles(type);
-        var byCode = roles.stream().collect(Collectors.toMap(Role::code, Role::id));
-        var example = ApprovalFlow.example(type, byCode);
-        var types = Arrays.stream(ApprovalFlow.Type.values()).map(value -> new Choice(value.name(), value.label)).toList();
-        var scopes = type.scopes.stream().map(value -> new Choice(value.name(), value.label)).toList();
+        Config config = config(type, false);
+        List<Role> roles = roles(type);
+        Map<String, Long> byCode = roles.stream().collect(Collectors.toMap(Role::code, Role::id));
+        ApprovalFlow.Draft example = ApprovalFlow.example(type, byCode);
+        List<Choice> types = Arrays.stream(ApprovalFlow.Type.values()).map(value -> new Choice(value.name(), value.label)).collect(Collectors.toList());
+        List<Choice> scopes = type.scopes.stream().map(value -> new Choice(value.name(), value.label)).collect(Collectors.toList());
         return new Settings(config.revision(), types, scopes, roles, example,
                 config.draft() == null ? example : decode(config.draft()), published(config.activeVersionId()));
     }
 
     private List<Role> roles(ApprovalFlow.Type type) {
-        return jdbc.sql("""
-                SELECT r.id, r.code, r.name FROM fm_role r
-                WHERE r.code = 'ADMIN' OR EXISTS (
-                    SELECT 1 FROM fm_role_permission p WHERE p.role_id = r.id AND p.permission_code = :reader
-                )
-                ORDER BY r.id
-                """).param("reader", type.reader.code).query(Role.class).list();
+        return jdbc.sql("SELECT r.id, r.code, r.name FROM fm_role r\n"
+                + "WHERE r.code = 'ADMIN' OR EXISTS (\n"
+                + "    SELECT 1 FROM fm_role_permission p WHERE p.role_id = r.id AND p.permission_code = :reader\n"
+                + ")\n"
+                + "ORDER BY r.id\n").param("reader", type.reader.code).query(Role.class).list();
     }
 
     private Published published(Long id) {
         if (id == null) return null;
-        var header = jdbc.sql("""
-                SELECT v.version_no, v.start_key, v.published_at, u.display_name AS publisher
-                FROM fm_workflow_version v JOIN fm_user u ON u.id = v.published_by WHERE v.id = :id
-                """).param("id", id).query(Header.class).single();
-        var steps = jdbc.sql("""
-                SELECT step_key AS `key`, step_name AS name, role_id, unit_scope, assignee_only,
-                       pass_label, remark_required, pass_to, return_to
-                FROM fm_workflow_step WHERE version_id = :id ORDER BY display_order
-                """).param("id", id).query(ApprovalFlow.Step.class).list();
+        Header header = jdbc.sql("SELECT v.version_no, v.start_key, v.published_at, u.display_name AS publisher\n"
+                + "FROM fm_workflow_version v JOIN fm_user u ON u.id = v.published_by WHERE v.id = :id\n")
+                .param("id", id).query(Header.class).single();
+        List<ApprovalFlow.Step> steps = jdbc.sql("SELECT step_key AS \"KEY\", step_name AS name, role_id, unit_scope, assignee_only,\n"
+                + "       pass_label, remark_required, pass_to, return_to\n"
+                + "FROM fm_workflow_step WHERE version_id = :id ORDER BY display_order\n").param("id", id).query(ApprovalFlow.Step.class).list();
         return new Published(header.versionNo(), header.publishedAt(), header.publisher(),
                 new ApprovalFlow.Draft(header.startKey(), steps));
     }
 
     private void saveSteps(long version, List<ApprovalFlow.Step> steps, Map<Long, String> roles) {
         for (int index = 0; index < steps.size(); index++) {
-            var step = steps.get(index);
-            jdbc.sql("""
-                    INSERT INTO fm_workflow_step (version_id, step_key, display_order, step_name, role_id, role_name,
-                        unit_scope, assignee_only, pass_label, remark_required, pass_to, return_to)
-                    VALUES (:version, :key, :position, :name, :role, :roleName,
-                        :scope, :assignee, :label, :remark, :pass, :back)
-                    """).param("version", version).param("key", step.key()).param("position", index)
-                    .param("name", step.name().strip()).param("role", step.roleId()).param("roleName", roles.get(step.roleId()))
+            ApprovalFlow.Step step = steps.get(index);
+            jdbc.sql("INSERT INTO fm_workflow_step (version_id, step_key, display_order, step_name, role_id, role_name,\n"
+                    + "    unit_scope, assignee_only, pass_label, remark_required, pass_to, return_to)\n"
+                    + "VALUES (:version, :key, :position, :name, :role, :roleName,\n"
+                    + "    :scope, :assignee, :label, :remark, :pass, :back)\n")
+                    .param("version", version).param("key", step.key()).param("position", index)
+                    .param("name", strip(step.name())).param("role", step.roleId()).param("roleName", roles.get(step.roleId()))
                     .param("scope", step.unitScope().name()).param("assignee", step.assigneeOnly()).param("label", step.actionLabel())
                     .param("remark", step.remarkRequired()).param("pass", step.passTo()).param("back", step.returnTo()).update();
         }
@@ -187,13 +177,61 @@ class ApprovalFlowSettings {
         }
     }
 
-    record Config(int revision, int lastVersion, Long activeVersionId, String draft) {}
-    record Header(int versionNo, String startKey, LocalDateTime publishedAt, String publisher) {}
-    record Role(long id, String code, String name) {}
-    record Choice(String value, String label) {}
-    record Published(int version, LocalDateTime at, String by, ApprovalFlow.Draft definition) {}
-    record Settings(int revision, List<Choice> types, List<Choice> scopes, List<Role> roles,
-                    ApprovalFlow.Draft example, ApprovalFlow.Draft draft, Published published) {}
-    record Edit(@NotNull @Min(0) Integer revision, @Valid @NotNull ApprovalFlow.Draft draft) {}
-    record Revision(@NotNull @Min(0) Integer revision) {}
+    @Value
+    static class Config {
+        int revision;
+        int lastVersion;
+        Long activeVersionId;
+        String draft;
+    }
+    @Value
+    static class Header {
+        int versionNo;
+        String startKey;
+        LocalDateTime publishedAt;
+        String publisher;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Role {
+        long id;
+        String code;
+        String name;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Choice {
+        String value;
+        String label;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Published {
+        int version;
+        LocalDateTime at;
+        String by;
+        ApprovalFlow.Draft definition;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Settings {
+        int revision;
+        List<Choice> types;
+        List<Choice> scopes;
+        List<Role> roles;
+        ApprovalFlow.Draft example;
+        ApprovalFlow.Draft draft;
+        Published published;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Edit {
+        @NotNull @Min(0) Integer revision;
+        @Valid @NotNull ApprovalFlow.Draft draft;
+    }
+    @Value
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    static class Revision {
+        @NotNull @Min(0) Integer revision;
+    }
 }

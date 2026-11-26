@@ -2,6 +2,7 @@ package com.firemanage;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 final class FireReminder {
@@ -25,9 +26,9 @@ final class FireReminder {
 
     static List<Notice> forDevice(int state, LocalDate expiry, LocalDate inspection, LocalDate today) {
         if (state == 0) {
-            return List.of();
+            return Collections.emptyList();
         }
-        var notices = new ArrayList<Notice>(2);
+        ArrayList<Notice> notices = new ArrayList<>(2);
         if (expiry != null) {
             if (expiry.isBefore(today)) {
                 notices.add(Notice.EXPIRED);

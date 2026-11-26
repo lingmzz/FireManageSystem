@@ -3,12 +3,9 @@ package com.firemanage;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.env.Environment;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-
-import static com.firemanage.ApiSupport.insert;
 
 @Component
 class InitialSetup implements ApplicationRunner {
@@ -25,13 +22,16 @@ class InitialSetup implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        // Serialize first-time setup if multiple application instances start together.
+        jdbc.sql("SELECT flow_type FROM fm_workflow_config WHERE flow_type = 'WORKBENCH' FOR UPDATE")
+                .query(String.class).single();
         ensureBasicSetup();
         ensureFireSetup();
-        if (jdbc.sql("INSERT IGNORE INTO fm_feature (code) VALUES ('workbench-label-v1')").update() > 0) {
+        if (markFeature("workbench-label-v1")) {
             jdbc.sql("UPDATE fm_menu SET name = '工作台' WHERE view_key = 'approvals' AND name = '审批工作台'").update();
         }
-        if (jdbc.sql("INSERT IGNORE INTO fm_feature (code) VALUES ('approval-flow-menu-v1')").update() > 0) {
-            var parent = jdbc.sql("SELECT COALESCE(parent_id, 0) FROM fm_menu WHERE view_key = 'roles' ORDER BY id LIMIT 1")
+        if (markFeature("approval-flow-menu-v1")) {
+            Long parent = jdbc.limit("SELECT COALESCE(parent_id, 0) FROM fm_menu WHERE view_key = 'roles' ORDER BY id", 1)
                     .query(Long.class).optional().orElse(0L);
             long existing = jdbc.sql("SELECT COUNT(*) FROM fm_menu WHERE view_key = :view")
                     .param("view", MenuController.View.WORKFLOWS.key).query(Long.class).single();
@@ -56,10 +56,9 @@ class InitialSetup implements ApplicationRunner {
         role("RECTIFIER", "整改办理员", Permission.APPROVAL_READ, Permission.APPROVAL_RECTIFY);
         role("REVIEWER", "复核员", Permission.APPROVAL_READ, Permission.APPROVAL_REVIEW);
 
-        long user = insert(jdbc.sql("""
-                INSERT INTO fm_user (username, display_name, password_hash)
-                VALUES (:username, '系统管理员', :password)
-                """).param("username", AccessService.BOOTSTRAP_USER).param("password", passwords.encode(password)));
+        long user = jdbc.sql("INSERT INTO fm_user (id, username, display_name, password_hash)\n"
+                + "VALUES (:newId, :username, '系统管理员', :password)\n")
+                .param("username", AccessService.BOOTSTRAP_USER).param("password", passwords.encode(password)).insert();
         jdbc.sql("INSERT INTO fm_user_role (user_id, role_id) VALUES (:userId, :roleId)")
                 .param("userId", user).param("roleId", adminRole).update();
 
@@ -71,13 +70,12 @@ class InitialSetup implements ApplicationRunner {
     }
 
     private void ensureFireSetup() {
-        if (jdbc.sql("INSERT IGNORE INTO fm_feature (code) VALUES ('station-fire-v1')").update() == 0) {
+        if (!markFeature("station-fire-v1")) {
             return;
         }
-        jdbc.sql("""
-                INSERT IGNORE INTO fm_fire_unit (code, name, kind)
-                VALUES ('CHANGCHE', '长车段', 'SEGMENT')
-                """).update();
+        jdbc.sql("INSERT INTO fm_fire_unit (id, code, name, kind)\n"
+                + "SELECT fm_id_seq.NEXTVAL, 'CHANGCHE', '长车段', 'SEGMENT' FROM dual\n"
+                + "WHERE NOT EXISTS (SELECT 1 FROM fm_fire_unit WHERE code = 'CHANGCHE')").update();
 
         addFireRole("FIRE_STATION", "车站消防管理员",
                 Permission.FIRE_DEVICE_READ, Permission.FIRE_DEVICE_ADD, Permission.FIRE_DEVICE_OPERATE,
@@ -103,6 +101,11 @@ class InitialSetup implements ApplicationRunner {
         menu(business, MenuController.View.FIRE_UNITS.label, MenuController.View.FIRE_UNITS.key, 50);
     }
 
+    private boolean markFeature(String code) {
+        return jdbc.sql("INSERT INTO fm_feature (code) SELECT :code FROM dual\n"
+                + "WHERE NOT EXISTS (SELECT 1 FROM fm_feature WHERE code = :code)").param("code", code).update() > 0;
+    }
+
     private void addFireRole(String code, String name, Permission... permissions) {
         if (jdbc.sql("SELECT COUNT(*) FROM fm_role WHERE code = :code").param("code", code).query(Long.class).single() == 0) {
             role(code, name, permissions);
@@ -110,8 +113,8 @@ class InitialSetup implements ApplicationRunner {
     }
 
     private long role(String code, String name, Permission... permissions) {
-        long id = insert(jdbc.sql("INSERT INTO fm_role (code, name) VALUES (:code, :name)")
-                .param("code", code).param("name", name));
+        long id = jdbc.sql("INSERT INTO fm_role (id, code, name) VALUES (:newId, :code, :name)")
+                .param("code", code).param("name", name).insert();
         for (Permission permission : permissions) {
             jdbc.sql("INSERT INTO fm_role_permission (role_id, permission_code) VALUES (:role, :permission)")
                     .param("role", id).param("permission", permission.code).update();
@@ -120,8 +123,7 @@ class InitialSetup implements ApplicationRunner {
     }
 
     private long menu(Long parent, String name, String view, int order) {
-        return insert(jdbc.sql("""
-                INSERT INTO fm_menu (parent_id, name, view_key, sort_order) VALUES (:parent, :name, :view, :order)
-                """).param("parent", parent).param("name", name).param("view", view).param("order", order));
+        return jdbc.sql("INSERT INTO fm_menu (id, parent_id, name, view_key, sort_order) VALUES (:newId, :parent, :name, :view, :order)\n")
+                .param("parent", parent).param("name", name).param("view", view).param("order", order).insert();
     }
 }

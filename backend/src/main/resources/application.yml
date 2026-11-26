@@ -19,7 +19,9 @@ spring:
       max-request-size: 10MB
   sql:
     init:
-      mode: always
+      mode: never
   datasource:
     hikari:
       maximum-pool-size: 8
+      connection-test-query: SELECT 1 FROM dual
+      connection-init-sql: "ALTER SESSION SET TIME_ZONE = '+08:00'"
