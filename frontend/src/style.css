@@ -1,0 +1,480 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.988 0.002 247);
+  --foreground: oklch(0.178 0.012 258);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.365 0.073 171);
+  --primary-foreground: oklch(0.985 0.004 166);
+  --secondary: oklch(0.961 0.006 250);
+  --secondary-foreground: oklch(0.269 0.018 255);
+  --muted: oklch(0.963 0.006 253);
+  --muted-foreground: oklch(0.481 0.023 254);
+  --accent: oklch(0.954 0.016 170);
+  --accent-foreground: oklch(0.31 0.061 170);
+  --destructive: oklch(0.53 0.194 25);
+  --border: oklch(0.912 0.009 255);
+  --input: oklch(0.881 0.01 255);
+  --ring: oklch(0.562 0.095 171);
+  --success: oklch(0.42 0.088 155);
+  --information: oklch(0.431 0.093 239);
+  --warning: oklch(0.444 0.113 60);
+  --sidebar: oklch(0.975 0.005 250);
+  --sidebar-foreground: oklch(0.248 0.02 254);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+.dark {
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.777 0.092 166);
+  --primary-foreground: oklch(0.228 0.036 171);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--secondary);
+  --muted-foreground: oklch(0.746 0.016 286.067);
+  --accent: oklch(0.317 0.042 173);
+  --accent-foreground: oklch(0.934 0.038 167);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 14%);
+  --input: oklch(1 0 0 / 20%);
+  --ring: oklch(0.674 0.091 171);
+  --success: oklch(0.791 0.124 151);
+  --information: oklch(0.808 0.104 237);
+  --warning: oklch(0.822 0.128 74);
+  --sidebar: oklch(0.179 0.009 271);
+  --sidebar-foreground: var(--foreground);
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-information: var(--information);
+  --color-warning: var(--warning);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground;
+    min-width: 320px;
+  }
+
+  button:not(:disabled), [role="menuitem"], [role="tab"]:not([data-disabled]) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .topbar {
+    @apply flex min-h-15 min-w-0 items-center gap-3 border-b bg-card px-4 sm:px-6;
+  }
+
+  .page {
+    @apply mx-auto w-full min-w-0 max-w-[1500px] px-4 pt-5 pb-12 sm:px-6 sm:pt-7 xl:px-8;
+  }
+
+  .page-heading {
+    @apply mb-5 flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .page-heading h1 {
+    @apply text-2xl font-semibold tracking-tight sm:text-[1.75rem];
+  }
+
+  .panel {
+    @apply min-w-0 gap-0 py-0;
+  }
+
+  .table-panel-content {
+    @apply min-w-0 px-0;
+  }
+
+  .toolbar, .inline-field {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .toolbar {
+    @apply border-b px-4 py-3.5;
+  }
+
+  .toolbar > [data-slot="input"] {
+    @apply w-full max-w-68 flex-[1_1_10rem];
+  }
+
+  .toolbar > [data-slot="native-select-wrapper"],
+  .inline-field > [data-slot="native-select-wrapper"] {
+    @apply w-fit min-w-32 max-w-full sm:max-w-52;
+  }
+
+  .pagination [data-slot="native-select-wrapper"] {
+    @apply w-fit;
+  }
+
+  .app-select option {
+    @apply bg-popover text-popover-foreground;
+  }
+
+  @supports (appearance: base-select) {
+    .app-select, .app-select::picker(select) {
+      appearance: base-select;
+    }
+
+    .app-select::picker-icon {
+      display: none;
+    }
+
+    .app-select::picker(select) {
+      @apply max-h-64 overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+      margin-block: 0.25rem;
+    }
+
+    .app-select option {
+      @apply min-h-8 items-center rounded px-2 py-1.5 text-sm;
+    }
+
+    .app-select option:checked {
+      @apply font-medium text-primary;
+    }
+
+    .app-select option:disabled {
+      @apply text-muted-foreground;
+    }
+
+    .app-select option:not(:disabled):is(:hover, :focus-visible) {
+      @apply bg-accent text-accent-foreground;
+    }
+  }
+
+  .date-input:enabled {
+    @apply cursor-pointer;
+  }
+
+  .date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+  }
+
+  .inline-field > [data-slot="input"] {
+    @apply flex-[1_1_10rem];
+  }
+
+  .page-tabs {
+    @apply border-b px-4 py-1;
+  }
+
+  .page-tabs [data-slot="tabs-list"] {
+    @apply max-w-full overflow-x-auto;
+  }
+
+  .table-wrap {
+    @apply min-w-0;
+  }
+
+  .table-wrap [data-slot="table-head"] {
+    @apply h-11 bg-muted/45 px-4;
+  }
+
+  .table-wrap [data-slot="table-cell"] {
+    @apply px-4 py-3 whitespace-normal;
+  }
+
+  .table-wrap [data-slot="table-cell"].nowrap,
+  .table-wrap [data-slot="table-cell"].row-actions {
+    @apply whitespace-nowrap;
+  }
+
+  .table-wrap [data-slot="table-cell"].empty-cell {
+    @apply p-0;
+  }
+
+  .empty-state {
+    @apply mx-auto min-h-36 border-0;
+  }
+
+  .pagination {
+    @apply flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-xs text-muted-foreground;
+  }
+
+  .pagination > div {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .page-index {
+    @apply whitespace-nowrap tabular-nums;
+  }
+
+  .strong {
+    @apply font-medium;
+  }
+
+  .subtle {
+    @apply text-muted-foreground;
+  }
+
+  .mono {
+    @apply font-mono text-xs;
+  }
+
+  .option {
+    @apply min-h-6;
+  }
+
+  .choices {
+    @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
+  }
+
+  .form-span {
+    @apply sm:col-span-2;
+  }
+
+  .form-actions {
+    @apply mt-1 flex justify-end gap-2;
+  }
+
+  .profile-avatar-editor {
+    @apply flex flex-wrap items-start gap-3 rounded-md border bg-muted/35 p-3;
+  }
+
+  .permission-picker {
+    @apply grid min-w-0 overflow-hidden rounded-lg border sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)];
+  }
+
+  .permission-menus {
+    @apply grid max-h-40 content-start gap-0.5 overflow-y-auto overscroll-contain border-b bg-muted/45 p-1.5 sm:max-h-72 sm:border-r sm:border-b-0;
+  }
+
+  .permission-menu {
+    @apply flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm outline-offset-[-2px] hover:bg-accent focus-visible:outline-2 aria-pressed:bg-accent aria-pressed:text-accent-foreground;
+  }
+
+  .permission-actions {
+    @apply min-w-0 p-3 sm:px-4;
+  }
+
+  .permission-actions-heading {
+    @apply mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-2.5;
+  }
+
+  .permission-options {
+    @apply grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2;
+  }
+
+  .workflow-config {
+    @apply flex flex-col gap-4 p-4 sm:p-5;
+  }
+
+  .workflow-config-header, .workflow-config-footer {
+    @apply flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .workflow-path {
+    @apply flex min-w-0 flex-col gap-1.5;
+  }
+
+  .workflow-builder {
+    @apply grid min-w-0 overflow-hidden rounded-lg border md:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1.45fr)];
+  }
+
+  .workflow-steps {
+    @apply min-w-0 border-b bg-muted/45 md:border-r md:border-b-0;
+  }
+
+  .workflow-steps-heading {
+    @apply flex items-center justify-between gap-2 border-b px-3 py-2;
+  }
+
+  .workflow-step-list {
+    @apply grid max-h-64 gap-0.5 overflow-y-auto p-1.5 md:max-h-[28rem];
+  }
+
+  .workflow-step-button {
+    @apply flex min-h-9 w-full min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm outline-offset-[-2px] hover:bg-accent focus-visible:outline-2 aria-pressed:bg-accent aria-pressed:text-accent-foreground;
+  }
+
+  .workflow-step-editor {
+    @apply flex min-w-0 flex-col gap-4 p-3 sm:p-4;
+  }
+
+  .file-input[aria-invalid="true"] {
+    @apply border-destructive ring-3 ring-destructive/20;
+  }
+
+  .file-input {
+    @apply h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2.5 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 file:mr-2 file:h-7 file:border-0 file:bg-transparent file:font-medium file:text-foreground disabled:opacity-50;
+  }
+
+  .panel .page-feedback {
+    @apply m-4 w-auto;
+  }
+
+  .app-dialog {
+    @apply max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain;
+  }
+
+  .detail-meta {
+    @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
+  }
+
+  .detail-meta div {
+    @apply rounded-md border bg-muted/35 px-3 py-2;
+  }
+
+  .detail-meta dt, .event-meta span {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .detail-meta dd {
+    @apply mt-1;
+  }
+
+  .detail-description, .history li p {
+    @apply whitespace-pre-wrap wrap-anywhere;
+  }
+
+  .history {
+    @apply border-t pt-3;
+  }
+
+  .history h3 {
+    @apply text-sm font-medium;
+  }
+
+  .history ol, .history ul {
+    @apply mt-2 list-disc;
+    padding-inline-start: 1.25rem;
+  }
+
+  .history li {
+    @apply py-1;
+  }
+
+  .event-meta {
+    @apply flex flex-wrap items-baseline gap-x-3 gap-y-1;
+  }
+
+  .action-box {
+    @apply border-t pt-4;
+  }
+
+  .app-loading {
+    @apply grid min-h-dvh content-center justify-items-center gap-3 text-sm text-muted-foreground;
+  }
+
+  .login-shell {
+    @apply grid min-h-dvh place-items-center bg-muted/50 p-5;
+  }
+
+  .login-layout {
+    @apply w-full max-w-sm;
+  }
+
+  .login-brand {
+    @apply mb-5 flex items-center justify-center gap-2.5 font-semibold;
+  }
+
+  .fire-actions, .fire-tags, .cell-badges {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .fire-checklist {
+    @apply max-h-44 overflow-auto py-1;
+  }
+
+  .fire-checklist .option {
+    @apply my-1.5;
+  }
+
+  .fire-bindings {
+    @apply grid grid-cols-1 md:grid-cols-[minmax(190px,0.75fr)_minmax(0,1.25fr)];
+  }
+
+  .fire-binding-form {
+    @apply min-w-0 border-t p-4 md:border-t-0 md:border-l;
+  }
+
+  .fire-picker {
+    @apply max-h-[420px] overflow-auto p-2;
+  }
+
+  .fire-picker button {
+    @apply w-full justify-between gap-2;
+  }
+
+  .fire-attachments {
+    @apply grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3;
+  }
+
+  .fire-attachment {
+    @apply min-w-0 rounded-md border bg-muted/35 p-2;
+  }
+
+  .fire-attachment img {
+    @apply max-h-40 w-full rounded-sm object-contain;
+  }
+
+  .fire-attachment button {
+    @apply wrap-anywhere text-left whitespace-normal;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

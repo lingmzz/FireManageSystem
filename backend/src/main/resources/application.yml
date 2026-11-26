@@ -1,0 +1,25 @@
+server:
+  address: 127.0.0.1
+  port: 48080
+  servlet:
+    session:
+      timeout: 8h
+      tracking-modes: cookie
+      cookie:
+        name: FIRESESSION
+        http-only: true
+        same-site: lax
+
+spring:
+  application:
+    name: fire-manage
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 10MB
+  sql:
+    init:
+      mode: always
+  datasource:
+    hikari:
+      maximum-pool-size: 8

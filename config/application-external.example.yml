@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: '${FIRE_DB_URL:jdbc:mysql://127.0.0.1:3306/fire_manage?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai&allowPublicKeyRetrieval=true&sslMode=DISABLED}'
+    username: '${FIRE_DB_USER:fire_manage}'
+    password: '${FIRE_DB_PASSWORD}'
+
+fire:
+  bootstrap-password: '${FIRE_BOOTSTRAP_PASSWORD:}'
