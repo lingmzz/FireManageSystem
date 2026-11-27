@@ -1,19 +1,13 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ChevronsUpDownIcon, LogOutIcon, UserRoundIcon } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import UserAvatar from './components/UserAvatar.vue'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { logout, refreshSession, session } from './api'
+import AccountMenu from './components/AccountMenu.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import DeletionDialog from './components/DeletionDialog.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
@@ -31,7 +25,7 @@ import FireUnitsPage from './pages/FireUnitsPage.vue'
 import ApprovalFlowsPage from './pages/ApprovalFlowsPage.vue'
 
 const views = {
-  'fire-dashboard': { name: '首页概览', permission: 'fire:dashboard', page: FireDashboardPage },
+  'fire-dashboard': { name: '消防大屏', permission: 'fire:dashboard', page: FireDashboardPage },
   'fire-devices': { name: '消防设备台账', permission: 'fire:device-read', page: FireDevicesPage },
   'fire-maintainers': { name: '维保单位', permission: 'fire:maint-read', page: FireMaintainersPage },
   'fire-drills': { name: '应急演练台账', permission: 'fire:drill-read', page: FireDrillsPage },
@@ -62,21 +56,22 @@ const allowed = computed(() => {
   return Object.keys(views).filter(key => permissions.includes(views[key].permission))
 })
 
-function firstView(items) {
+function firstWorkspaceView(items) {
   for (const item of items) {
-    if (item.viewKey && allowed.value.includes(item.viewKey)) return item.viewKey
-    const nested = firstView(item.children)
+    if (item.viewKey !== 'fire-dashboard' && allowed.value.includes(item.viewKey)) return item.viewKey
+    const nested = firstWorkspaceView(item.children)
     if (nested) return nested
   }
   return null
 }
 
-const viewKey = computed(() => {
-  if (allowed.value.includes(current.value)) return current.value
-  if (allowed.value.includes('fire-dashboard')) return 'fire-dashboard'
+const homeViewKey = computed(() => {
   if (allowed.value.includes('approvals')) return 'approvals'
-  return firstView(session.user?.menus ?? []) ?? allowed.value[0]
+  return firstWorkspaceView(session.user?.menus ?? []) ?? allowed.value.find(key => key !== 'fire-dashboard')
 })
+const viewKey = computed(() => allowed.value.includes(current.value)
+  ? current.value
+  : homeViewKey.value ?? allowed.value[0])
 const activeView = computed(() => views[viewKey.value])
 
 function menuPath(items, key) {
@@ -108,7 +103,12 @@ watch(() => session.user, user => {
 function closeProfile(saved = false) {
   editingProfile.value = false
   if (saved) actionNotice.value = '个人信息已保存。'
-  nextTick(() => accountButton.value?.$el.focus())
+  nextTick(() => accountButton.value?.focus())
+}
+
+function openProfile() {
+  editingProfile.value = true
+  actionNotice.value = ''
 }
 
 async function leave() {
@@ -132,6 +132,14 @@ async function leave() {
     <p>正在连接消防管理系统…</p>
   </div>
   <LoginPage v-else-if="!session.user" />
+  <FireDashboardPage v-else-if="viewKey === 'fire-dashboard'"
+                     :home-href="homeViewKey ? '#/' : undefined"
+                     :home-label="homeViewKey === 'approvals' ? '返回工作台' : '返回系统'"
+                     :account-error="actionError" :account-notice="actionNotice">
+    <template #account>
+      <AccountMenu ref="accountButton" :busy="leaving" @profile="openProfile" @logout="leave" />
+    </template>
+  </FireDashboardPage>
   <SidebarProvider v-else>
     <AppSidebar :items="session.user.menus" :active="viewKey" />
     <SidebarInset class="min-w-0 bg-background">
@@ -149,32 +157,9 @@ async function leave() {
             </template>
           </BreadcrumbList>
         </Breadcrumb>
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <Button ref="accountButton" variant="ghost" size="sm" class="ml-auto shrink-0 gap-2" :disabled="leaving">
-              <UserAvatar :name="session.user.displayName || session.user.username"
-                          :src="session.user.profile?.avatarUrl" size="sm" class="size-7" />
-              <span class="max-w-28 truncate">{{ session.user.displayName }}</span>
-              <ChevronsUpDownIcon data-icon="inline-end" aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-48">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>{{ session.user.username }}</DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem @select="editingProfile = true; actionNotice = ''">
-                <UserRoundIcon data-icon="inline-start" aria-hidden="true" />
-                个人信息
-              </DropdownMenuItem>
-              <DropdownMenuItem :disabled="leaving" @select="leave">
-                <LogOutIcon data-icon="inline-start" aria-hidden="true" />
-                退出登录
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div class="ml-auto">
+          <AccountMenu ref="accountButton" :busy="leaving" @profile="openProfile" @logout="leave" />
+        </div>
       </header>
       <div class="page">
         <Alert v-if="actionError" variant="destructive" class="mb-4">
@@ -189,7 +174,7 @@ async function leave() {
         </Empty>
       </div>
     </SidebarInset>
-    <ProfileDialog v-if="editingProfile" @close="closeProfile()" @saved="closeProfile(true)" />
   </SidebarProvider>
+  <ProfileDialog v-if="session.user && editingProfile" @close="closeProfile()" @saved="closeProfile(true)" />
   <DeletionDialog />
 </template>

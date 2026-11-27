@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { MonitorIcon } from '@lucide/vue'
 import { api, dateTime, pageSize, session } from '../api'
 import ModalDialog from '../components/ModalDialog.vue'
 import PageControls from '../components/PageControls.vue'
@@ -36,6 +37,7 @@ const editor = ref({})
 const assignees = ref([])
 const assigneeSearch = ref('')
 const canReport = computed(() => session.user?.permissions.includes('approvals:create'))
+const canOpenDashboard = computed(() => session.user?.permissions.includes('fire:dashboard'))
 
 async function load(next = 1) {
   loading.value = true
@@ -124,7 +126,15 @@ async function reloadWorkflow() {
 <template>
   <div class="page-heading">
     <h1>工作台</h1>
-    <UiButton v-if="canReport"  @click="create">上报隐患</UiButton>
+    <div class="flex flex-wrap items-center gap-2">
+      <UiButton v-if="canOpenDashboard" as-child variant="outline">
+        <a href="#/fire-dashboard">
+          <MonitorIcon data-icon="inline-start" aria-hidden="true" />
+          消防大屏
+        </a>
+      </UiButton>
+      <UiButton v-if="canReport" @click="create">上报隐患</UiButton>
+    </div>
   </div>
   <UiCard class="panel">
     <UiCardContent class="table-panel-content px-0">

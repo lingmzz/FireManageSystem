@@ -62,6 +62,26 @@
   --sidebar-foreground: var(--foreground);
 }
 
+.dash-shell {
+  --background: #091612;
+  --foreground: #eef7f2;
+  --card: #11241d;
+  --secondary: #1d322a;
+  --muted: #1b332a;
+  --muted-foreground: #a2bdb1;
+  --accent: #204237;
+  --accent-foreground: #c6f5de;
+  --primary: #80e2b2;
+  --primary-foreground: #0c261b;
+  --border: #2a483b;
+  --input: #345648;
+  --ring: #84d9b0;
+  --destructive: #ff9a94;
+  --warning: #f1c672;
+  --information: #9bc7f3;
+  --success: #8fdf99;
+}
+
 @theme inline {
   --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
   --font-heading: var(--font-sans);
@@ -469,75 +489,129 @@
     @apply wrap-anywhere text-left whitespace-normal;
   }
 
-  /* 消防首页大屏：方案一翡翠绿配色 + 方案二态势指挥布局 */
   .dash-shell {
-    @apply space-y-4;
+    --dash-gap: clamp(0.75rem, 1vw, 1rem);
+    @apply flex min-h-dvh min-w-0 flex-col bg-background text-foreground;
+    gap: var(--dash-gap);
+    padding: clamp(0.875rem, 1.75vw, 2rem);
+    color-scheme: dark;
+    background-image:
+      radial-gradient(ellipse at 15% 0%, #14392a 0%, transparent 44%),
+      linear-gradient(90deg, #ecffe908 1px, transparent 1px),
+      linear-gradient(#ecffe908 1px, transparent 1px);
+    background-size: auto, 40px 40px, 40px 40px;
   }
 
   .dash-command-bar {
-    @apply flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3.5 shadow-2xs sm:px-5;
-    background-image: linear-gradient(125deg, color-mix(in oklch, var(--accent) 55%, var(--card)) 0%, var(--card) 52%);
+    @apply flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-border;
+    padding-bottom: var(--dash-gap);
   }
 
   .dash-brand-emblem {
-    @apply mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs;
+    @apply grid size-11 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/10 text-primary sm:size-13;
   }
 
-  .dash-live-pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-accent px-2.5 py-0.5 text-[11px] font-medium text-accent-foreground;
+  .dash-title {
+    @apply wrap-anywhere leading-tight font-semibold tracking-tight;
+    font-size: clamp(1.25rem, 2vw, 2.125rem);
   }
 
-  .dash-live-dot {
-    @apply size-1.5 rounded-full bg-primary;
-    animation: dash-pulse 1.8s ease-in-out infinite;
-  }
-
-  .dash-pulse {
-    animation: dash-pulse 1.8s ease-in-out infinite;
+  .dash-toolbar {
+    @apply flex flex-wrap items-center gap-x-4 gap-y-2;
   }
 
   .dash-scope-pills {
-    @apply inline-flex flex-wrap items-center rounded-lg border bg-muted/60 p-0.5 text-xs;
+    @apply inline-flex flex-wrap items-center gap-0.5 rounded-lg border bg-card p-0.5 text-xs;
   }
 
   .dash-scope-pill {
-    @apply rounded-md px-2.5 py-1 text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-primary aria-pressed:font-medium aria-pressed:text-primary-foreground;
+    @apply rounded-md px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent aria-pressed:font-semibold aria-pressed:text-accent-foreground disabled:cursor-default;
   }
 
   .dash-grid-surface {
-    @apply rounded-xl border border-border/80 bg-muted/25 p-3.5 sm:p-4;
-    background-image:
-      linear-gradient(to right, color-mix(in oklch, var(--border) 42%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklch, var(--border) 42%, transparent) 1px, transparent 1px);
-    background-size: 28px 28px;
+    @apply grid min-w-0;
+    gap: var(--dash-gap);
+  }
+
+  .dash-kpis, .dash-columns, .dash-column {
+    @apply grid min-w-0;
+    gap: var(--dash-gap);
+  }
+
+  .dash-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
+  }
+
+  .dash-columns, .dash-column {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
   }
 
   .dash-kpi-card {
-    @apply flex flex-col justify-between rounded-xl border bg-card p-4 shadow-2xs transition-all hover:border-primary/40 hover:shadow-sm disabled:cursor-default disabled:hover:border-border disabled:hover:shadow-2xs;
+    @apply flex min-w-0 flex-col justify-between gap-2 rounded-xl border bg-card p-4 text-left shadow-xs transition-colors enabled:hover:border-primary/55 enabled:hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default;
   }
 
   .dash-kpi-alert {
-    @apply border-destructive/35 bg-gradient-to-br from-destructive/5 to-card;
+    @apply border-destructive/45;
+    background-image: linear-gradient(125deg, #ff938919, transparent 72%);
+  }
+
+  .dash-kpi-label {
+    @apply flex items-center gap-2 text-sm font-medium;
+  }
+
+  .dash-kpi-label svg {
+    @apply shrink-0;
+  }
+
+  .dash-kpi-value {
+    @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 leading-none font-semibold tracking-tight tabular-nums;
+    font-size: clamp(1.875rem, 2.55vw, 3rem);
+  }
+
+  .dash-kpi-unit {
+    @apply text-xs font-medium tracking-normal text-muted-foreground;
+  }
+
+  .dash-kpi-detail {
+    @apply text-xs text-muted-foreground tabular-nums;
   }
 
   .dash-panel {
-    @apply min-w-0 gap-0 overflow-hidden py-0 shadow-2xs;
+    @apply min-h-0 min-w-0 border border-border;
   }
 
   .dash-panel-header {
-    @apply flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3;
+    @apply flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b bg-accent/35 px-4 py-3;
   }
 
   .dash-panel-header h2 {
-    @apply text-sm font-semibold tracking-tight text-foreground;
+    @apply text-[0.9375rem] font-semibold text-foreground;
+  }
+
+  .dash-panel-body {
+    @apply min-h-0 p-3.5 sm:p-4;
+  }
+
+  .dash-device-mix {
+    @apply flex min-h-full flex-wrap items-center justify-center gap-4;
+  }
+
+  .dash-device-mix > div {
+    min-width: min(100%, 10rem);
+  }
+
+  .dash-device-donut {
+    @apply shrink-0;
+    width: clamp(7rem, 10vw, 10rem);
   }
 
   .dash-link-btn {
-    @apply inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline;
+    @apply inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring;
   }
 
   .dash-urgent-row {
-    @apply flex items-center justify-between gap-2.5 rounded-lg border px-3 py-2.5;
+    @apply flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 rounded-lg border px-2.5 py-2;
   }
 
   .dash-urgent-danger {
@@ -557,7 +631,7 @@
   }
 
   .dash-unit-card {
-    @apply rounded-lg border bg-card p-3 transition-all hover:border-primary/45 hover:shadow-xs;
+    @apply min-w-0 rounded-lg border bg-card p-2.5 transition-colors enabled:hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-ring aria-pressed:border-primary;
   }
 
   .dash-unit-danger {
@@ -574,7 +648,6 @@
 
   .dash-dot-danger {
     @apply bg-destructive;
-    animation: dash-pulse 1.8s ease-in-out infinite;
   }
 
   .dash-dot-warning {
@@ -586,31 +659,31 @@
   }
 
   .dash-funnel-bar {
-    @apply flex h-full items-center rounded-md px-2 text-[11px] font-medium whitespace-nowrap transition-all;
+    @apply h-full rounded-full;
   }
 
   .dash-funnel-neutral {
-    @apply bg-secondary-foreground/20 text-foreground;
+    @apply bg-muted-foreground/70;
   }
 
   .dash-funnel-warning {
-    @apply bg-warning/20 text-warning;
+    @apply bg-warning;
   }
 
   .dash-funnel-info {
-    @apply bg-information/20 text-information;
+    @apply bg-information;
   }
 
   .dash-funnel-primary {
-    @apply bg-primary/20 text-primary;
+    @apply bg-primary/65;
   }
 
   .dash-funnel-success {
-    @apply bg-primary text-primary-foreground;
+    @apply bg-success;
   }
 
   .dash-timeline {
-    @apply ml-1.5 space-y-3 border-l border-border pl-4;
+    @apply ml-1.5 flex flex-col gap-3 border-l border-border pl-4;
   }
 
   .dash-timeline-item {
@@ -622,13 +695,56 @@
   }
 
   .dash-maint-card {
-    @apply rounded-lg border bg-muted/25 px-3 py-2.5;
+    @apply rounded-lg border bg-muted/35 px-3 py-2.5;
   }
-}
 
-@keyframes dash-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.85); }
+  @media (56rem <= width < 80rem) {
+    .dash-columns, .dash-column:last-child {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dash-column:last-child {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (min-width: 80rem) {
+    .dash-columns {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.32fr) minmax(0, 0.96fr);
+    }
+  }
+
+  @media (min-width: 80rem) and (min-height: 44rem) {
+    .dash-shell {
+      height: 100dvh;
+      overflow-y: auto;
+    }
+
+    .dash-grid-surface {
+      flex: 1;
+      min-height: 29rem;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .dash-columns, .dash-column {
+      align-content: stretch;
+    }
+
+    .dash-columns {
+      grid-auto-rows: minmax(0, 1fr);
+    }
+
+    .dash-column {
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+    }
+
+    .dash-panel-body {
+      flex: 1;
+      overflow: auto;
+      scrollbar-color: var(--input) transparent;
+      scrollbar-width: thin;
+    }
+  }
 }
 
 @layer base {

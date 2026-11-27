@@ -23,17 +23,21 @@ const icons = {
   roles: ShieldIcon,
   menus: ListTreeIcon,
 }
+
+function menuLabel(item) {
+  return item.viewKey === 'fire-dashboard' && item.name === '首页概览' ? '消防大屏' : item.name
+}
 </script>
 
 <template>
   <SidebarMenu>
     <SidebarMenuItem v-for="item in items" :key="item.id">
       <SidebarMenuButton v-if="item.viewKey" as-child :is-active="active === item.viewKey"
-                         :tooltip="item.name" class="group-data-[collapsible=icon]:mx-auto">
-        <a :href="'#/' + item.viewKey" :aria-label="item.name" :aria-current="active === item.viewKey ? 'page' : undefined"
+                         :tooltip="menuLabel(item)" class="group-data-[collapsible=icon]:mx-auto">
+        <a :href="'#/' + item.viewKey" :aria-label="menuLabel(item)" :aria-current="active === item.viewKey ? 'page' : undefined"
            @click="setOpenMobile(false)">
           <component :is="icons[item.viewKey] || LayoutGridIcon" aria-hidden="true" />
-          <span class="group-data-[collapsible=icon]:hidden">{{ item.name }}</span>
+          <span class="group-data-[collapsible=icon]:hidden">{{ menuLabel(item) }}</span>
         </a>
       </SidebarMenuButton>
       <SidebarGroup v-if="item.children.length" class="group-data-[collapsible=icon]:mx-0 group-data-[collapsible=icon]:px-0"

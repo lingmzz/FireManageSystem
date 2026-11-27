@@ -1,44 +1,95 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
-  ActivityIcon, AlertTriangleIcon, ArrowUpRightIcon, BoxesIcon, Building2Icon,
-  CheckCircle2Icon, ClipboardCheckIcon, FlameIcon, HandshakeIcon, PhoneIcon,
-  RefreshCwIcon, ShieldCheckIcon, SirenIcon
+  ActivityIcon, AlertTriangleIcon, ArrowLeftIcon, ArrowUpRightIcon, Building2Icon,
+  CheckCircle2Icon, ClipboardCheckIcon, FlameIcon, HandshakeIcon, MaximizeIcon,
+  MinimizeIcon, PhoneIcon, RefreshCwIcon, ShieldCheckIcon, SirenIcon
 } from '@lucide/vue'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, dateTime, session } from '../api'
 import { deviceTypes, noticeLabels, params, unitKinds, unitOptions } from '../fire'
 
+defineProps({ homeHref: String, homeLabel: String, accountError: String, accountNotice: String })
+
 const loading = ref(true)
 const error = ref('')
 const selectedUnitId = ref('')
 const data = ref(null)
+const fullscreen = ref(false)
+const fullscreenPending = ref(false)
+const fullscreenError = ref('')
+const fullscreenUnavailable = '当前窗口无法切换网页全屏，可使用浏览器菜单里的全屏功能。'
+let mounted = false
 
 const donutPalette = [
   'var(--primary)',
   'var(--information)',
   'var(--warning)',
   'var(--success)',
-  'oklch(0.55 0.08 205)',
-  'oklch(0.60 0.09 145)',
+  'oklch(0.74 0.12 297)',
+  'oklch(0.71 0.11 215)',
   'var(--muted-foreground)'
 ]
 
 async function load(unitId = selectedUnitId.value) {
   loading.value = true
   error.value = ''
-  selectedUnitId.value = unitId === null || unitId === undefined ? '' : String(unitId)
+  selectedUnitId.value = unitId == null ? '' : String(unitId)
   try {
     const query = params({ unitId: selectedUnitId.value })
     data.value = await api('/api/fire/dashboard' + (query.toString() ? '?' + query : ''))
   } catch (failure) {
+    selectedUnitId.value = String(data.value?.selectedUnitId ?? '')
     error.value = failure.message
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => load(''))
+function syncFullscreen() {
+  fullscreen.value = document.fullscreenElement === document.documentElement
+}
+
+function exitDashboardFullscreen() {
+  if (document.fullscreenElement === document.documentElement) {
+    void document.exitFullscreen().catch(() => {})
+  }
+}
+
+async function toggleFullscreen() {
+  if (fullscreenPending.value) return
+  fullscreenError.value = ''
+  fullscreenPending.value = true
+  try {
+    if (fullscreen.value) {
+      await document.exitFullscreen()
+    } else if (document.fullscreenEnabled) {
+      // Fullscreen the document so menus and dialogs rendered into body remain accessible.
+      await document.documentElement.requestFullscreen()
+      if (!mounted) exitDashboardFullscreen()
+    } else {
+      fullscreenError.value = fullscreenUnavailable
+    }
+  } catch {
+    fullscreenError.value = fullscreenUnavailable
+  } finally {
+    fullscreenPending.value = false
+  }
+}
+
+onMounted(() => {
+  mounted = true
+  window.scrollTo(0, 0)
+  syncFullscreen()
+  document.addEventListener('fullscreenchange', syncFullscreen)
+  load('')
+})
+
+onBeforeUnmount(() => {
+  mounted = false
+  document.removeEventListener('fullscreenchange', syncFullscreen)
+  exitDashboardFullscreen()
+})
 
 const summary = computed(() => data.value?.summary ?? null)
 const capabilities = computed(() => data.value?.capabilities ?? {})
@@ -53,8 +104,8 @@ const quickFilterUnits = computed(() => {
 
 const scopeTitle = computed(() => {
   if (!data.value) return '消防安全态势总览'
-  if (selectedUnitId.value) {
-    const match = (data.value.units ?? []).find(u => String(u.id) === selectedUnitId.value)
+  if (data.value.selectedUnitId != null) {
+    const match = (data.value.units ?? []).find(u => u.id === data.value.selectedUnitId)
     if (match) return match.name + ' · 消防态势总览'
   }
   const seg = (data.value.units ?? []).find(u => u.kind === 'SEGMENT')
@@ -70,7 +121,7 @@ const scopeSubtitle = computed(() => {
   if (s.departmentCount > 0) parts.push(`${s.departmentCount} 个科室`)
   if (s.stationCount > 0) parts.push(`${s.stationCount} 座车站`)
   if (!parts.length) parts.push(`${s.totalUnitCount} 个管辖单位`)
-  return `段—科—站三级联防监控 · 当前范围涵盖 ${parts.join(' / ')}`
+  return parts.join(' · ')
 })
 
 const inspectionTotal = computed(() => {
@@ -130,8 +181,6 @@ function sparklinePoints(values) {
   }).join(' ')
 }
 
-const hazardCreatedSpark = computed(() => sparklinePoints((data.value?.trends ?? []).map(t => t.hazardsCreated)))
-const hazardClosedSpark = computed(() => sparklinePoints((data.value?.trends ?? []).map(t => t.hazardsClosed)))
 const drillSpark = computed(() => sparklinePoints((data.value?.trends ?? []).map(t => t.drills)))
 
 const trendMax = computed(() => {
@@ -178,239 +227,175 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
 </script>
 
 <template>
-  <div class="dash-shell">
-    <!-- 第一层：大屏顶部态势指挥栏（方案一翡翠绿配色 + 方案二指挥舱结构） -->
-    <section class="dash-command-bar">
-      <div class="flex min-w-0 items-start gap-3">
+  <main class="dash-shell dark">
+    <header class="dash-command-bar">
+      <div class="flex min-w-0 items-center gap-3 sm:gap-4">
         <span class="dash-brand-emblem" aria-hidden="true">
-          <ShieldCheckIcon class="size-5" />
+          <ShieldCheckIcon class="size-6" />
         </span>
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="truncate text-xl font-semibold tracking-tight sm:text-2xl">{{ scopeTitle }}</h1>
-            <span class="dash-live-pill">
-              <span class="dash-live-dot" aria-hidden="true"></span>
-              实时监控中
-            </span>
-          </div>
-          <p class="mt-0.5 text-xs text-muted-foreground">
-            {{ scopeSubtitle || '正在汇总管辖单位消防器材、隐患销号、演练与维保态势…' }}
-          </p>
+          <h1 class="dash-title">{{ scopeTitle }}</h1>
+          <p v-if="scopeSubtitle" class="mt-1 text-sm text-muted-foreground">{{ scopeSubtitle }}</p>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <!-- 科室快捷切换胶囊（若有2~5个科室） -->
+        <UiButton v-if="homeHref" as-child variant="outline">
+          <a :href="homeHref">
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />
+            {{ homeLabel }}
+          </a>
+        </UiButton>
+        <UiButton type="button" :disabled="fullscreenPending" @click="toggleFullscreen">
+          <component :is="fullscreen ? MinimizeIcon : MaximizeIcon" data-icon="inline-start" aria-hidden="true" />
+          {{ fullscreen ? '退出全屏' : '全屏显示' }}
+        </UiButton>
+        <slot name="account" />
+      </div>
+    </header>
+
+    <div class="dash-toolbar">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
         <div v-if="quickFilterUnits.length" class="dash-scope-pills" role="group" aria-label="按科室快速筛选">
-          <button type="button" class="dash-scope-pill" :aria-pressed="selectedUnitId === ''" @click="load('')">
+          <button type="button" class="dash-scope-pill" :aria-pressed="selectedUnitId === ''"
+                  :disabled="loading" @click="load('')">
             全辖区
           </button>
           <button v-for="dept in quickFilterUnits" :key="dept.id" type="button" class="dash-scope-pill"
-                  :aria-pressed="selectedUnitId === String(dept.id)" @click="load(dept.id)">
+                  :aria-pressed="selectedUnitId === String(dept.id)" :disabled="loading" @click="load(dept.id)">
             {{ dept.name }}
           </button>
         </div>
 
-        <!-- 全量单位下拉筛选 -->
         <UiNativeSelect v-if="allUnits.length > 1" :model-value="selectedUnitId" aria-label="按消防单位切换态势范围"
-                        class="w-40 sm:w-44" @update:model-value="value => load(value)">
+                        class="w-44" size="sm" :disabled="loading" @update:model-value="load">
           <UiNativeSelectOption value="">全部管辖单位</UiNativeSelectOption>
           <UiNativeSelectOption v-for="unit in allUnits" :key="unit.id" :value="String(unit.id)">
             {{ unit.label }}
           </UiNativeSelectOption>
         </UiNativeSelect>
+      </div>
 
-        <UiButton variant="outline" size="sm" :disabled="loading" @click="load(selectedUnitId)">
-          <RefreshCwIcon class="size-3.5" :class="{ 'animate-spin': loading }" aria-hidden="true" />
+      <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p v-if="data?.generatedAt" class="text-xs text-muted-foreground" role="status">
+          数据更新于 <time :datetime="data.generatedAt" class="tabular-nums">{{ dateTime(data.generatedAt) }}</time>
+        </p>
+        <UiButton type="button" variant="outline" size="sm" :disabled="loading" @click="load()">
+          <RefreshCwIcon data-icon="inline-start" :class="{ 'motion-safe:animate-spin': loading }" aria-hidden="true" />
           刷新
         </UiButton>
-        <UiButton v-if="canNavigate('fire:device-read')" variant="outline" size="sm" @click="navigate('fire-devices')">
-          <BoxesIcon class="size-3.5" aria-hidden="true" />
-          设备台账
-        </UiButton>
-        <UiButton v-if="canNavigate('fire:hazard-read')" size="sm" @click="navigate('fire-hazards')">
-          <FlameIcon class="size-3.5" aria-hidden="true" />
-          隐患库
-        </UiButton>
       </div>
-    </section>
+    </div>
+
+    <UiAlert v-if="fullscreenError" variant="destructive" role="alert">
+      <UiAlertDescription>{{ fullscreenError }}</UiAlertDescription>
+    </UiAlert>
+    <UiAlert v-if="accountError" variant="destructive" role="alert">
+      <UiAlertDescription>{{ accountError }}</UiAlertDescription>
+    </UiAlert>
+    <UiAlert v-if="accountNotice" role="status">
+      <UiAlertDescription>{{ accountNotice }}</UiAlertDescription>
+    </UiAlert>
 
     <UiAlert v-if="error" variant="destructive" role="alert">
       <UiAlertDescription>{{ error }}</UiAlertDescription>
     </UiAlert>
 
-    <!-- 骨架加载态 -->
-    <div v-if="loading && !data" class="space-y-4">
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Skeleton v-for="n in 5" :key="n" class="h-28 rounded-xl" />
+    <div v-if="loading && !data" class="dash-grid-surface" role="status" aria-label="正在加载消防态势">
+      <div class="dash-kpis">
+        <Skeleton v-for="n in 5" :key="n" class="h-32 rounded-xl" />
       </div>
-      <div class="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <Skeleton class="h-96 rounded-xl xl:col-span-4" />
-        <Skeleton class="h-96 rounded-xl xl:col-span-5" />
-        <Skeleton class="h-96 rounded-xl xl:col-span-3" />
+      <div class="dash-columns">
+        <Skeleton v-for="n in 3" :key="n" class="h-80 rounded-xl" />
       </div>
     </div>
 
-    <!-- 主大屏网格表面 -->
-    <div v-else-if="data && summary" class="dash-grid-surface space-y-4">
-      <!-- 第二层：5 列高密度 KPI 指标带（带 SVG Sparkline） -->
-      <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="核心态势指标">
-        <!-- KPI 1: 设备完好率 -->
-        <button type="button" class="dash-kpi-card group text-left" :disabled="!capabilities.devices"
-                @click="capabilities.devices && navigate('fire-devices')">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5 font-medium">
-              <ShieldCheckIcon class="size-3.5 text-primary" aria-hidden="true" />
-              消防设备完好率
-            </span>
-            <span class="rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground">
-              台账 {{ summary.deviceTotal }}
-            </span>
-          </div>
-          <div class="mt-2.5 flex items-end justify-between gap-2">
-            <div>
-              <div class="text-2xl font-bold tracking-tight text-primary tabular-nums">
-                {{ summary.healthRate.toFixed(1) }}%
-              </div>
-              <div class="mt-1 text-[11px] text-muted-foreground tabular-nums">
-                在用 {{ summary.deviceInUse }} · 库存 {{ summary.deviceStock }} · 报废 {{ summary.deviceScrapped }}
-              </div>
-            </div>
-            <svg class="h-8 w-16 shrink-0" viewBox="0 0 64 30" aria-hidden="true">
-              <polyline fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        points="2,22 14,19 26,20 38,14 50,11 62,8" />
-            </svg>
-          </div>
+    <div v-else-if="data && summary" class="dash-grid-surface" :aria-busy="loading">
+      <section class="dash-kpis" aria-label="核心态势指标">
+        <button type="button" class="dash-kpi-card" :disabled="!capabilities.devices" @click="navigate('fire-devices')">
+          <span class="dash-kpi-label">
+            <ShieldCheckIcon class="size-4 text-primary" aria-hidden="true" />
+            消防设备完好率
+          </span>
+          <span class="dash-kpi-value text-primary">{{ capabilities.devices ? summary.healthRate.toFixed(1) + '%' : '—' }}</span>
+          <span v-if="capabilities.devices" class="dash-kpi-detail">
+            在用 {{ summary.deviceInUse }} · 库存 {{ summary.deviceStock }} · 报废 {{ summary.deviceScrapped }}
+          </span>
         </button>
 
-        <!-- KPI 2: 高优保质期告警 -->
-        <button type="button" class="dash-kpi-card group text-left"
+        <button type="button" class="dash-kpi-card"
                 :class="{ 'dash-kpi-alert': summary.expiredCount > 0 }"
-                :disabled="!capabilities.devices"
-                @click="capabilities.devices && navigate('fire-devices')">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5 font-medium" :class="summary.expiredCount > 0 ? 'text-destructive' : ''">
-              <AlertTriangleIcon class="size-3.5" :class="summary.expiredCount > 0 ? 'text-destructive' : 'text-warning'" aria-hidden="true" />
-              保质期到期告警
-            </span>
-            <UiBadge :variant="summary.expiredCount > 0 ? 'destructive' : summary.within3MonthsCount > 0 ? 'attention' : 'ok'">
-              {{ summary.expiredCount > 0 ? '高优处置' : summary.within3MonthsCount > 0 ? '临期关注' : '状态良好' }}
-            </UiBadge>
-          </div>
-          <div class="mt-2.5 flex items-end justify-between gap-2">
-            <div>
-              <div class="flex items-baseline gap-1.5 tabular-nums">
-                <span class="text-2xl font-bold tracking-tight" :class="summary.expiredCount > 0 ? 'text-destructive' : 'text-foreground'">
-                  {{ summary.expiredCount }}
-                </span>
-                <span class="text-sm font-semibold text-warning">/ {{ summary.within3MonthsCount }}</span>
-              </div>
-              <div class="mt-1 text-[11px] text-muted-foreground tabular-nums">
-                已过期 / 3月内 · 6月内 {{ summary.within6MonthsCount }} 台
-              </div>
-            </div>
-            <svg class="h-8 w-16 shrink-0" viewBox="0 0 64 30" aria-hidden="true">
-              <polyline fill="none" :stroke="summary.expiredCount > 0 ? 'var(--destructive)' : 'var(--warning)'"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        points="2,20 14,16 26,18 38,12 50,15 62,10" />
-            </svg>
-          </div>
+                :disabled="!capabilities.devices" @click="navigate('fire-devices')">
+          <span class="dash-kpi-label">
+            <AlertTriangleIcon class="size-4" :class="summary.expiredCount > 0 ? 'text-destructive' : 'text-warning'" aria-hidden="true" />
+            设备保质期预警
+          </span>
+          <span class="dash-kpi-value" :class="{ 'text-destructive': summary.expiredCount > 0 }">
+            {{ capabilities.devices ? summary.expiredCount : '—' }}
+            <span v-if="capabilities.devices" class="dash-kpi-unit">台已过期</span>
+          </span>
+          <span v-if="capabilities.devices" class="dash-kpi-detail">
+            3 个月内 {{ summary.within3MonthsCount }} 台 · 6 个月内 {{ summary.within6MonthsCount }} 台
+          </span>
         </button>
 
-        <!-- KPI 3: 在用年检待办 -->
-        <button type="button" class="dash-kpi-card group text-left" :disabled="!capabilities.devices"
-                @click="capabilities.devices && navigate('fire-devices')">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5 font-medium">
-              <ClipboardCheckIcon class="size-3.5 text-information" aria-hidden="true" />
-              在用年检待办
-            </span>
-            <span class="rounded-full bg-information/10 px-1.5 py-0.5 text-[11px] font-medium text-information">
-              年度核验
-            </span>
-          </div>
-          <div class="mt-2.5 flex items-end justify-between gap-2">
-            <div>
-              <div class="text-2xl font-bold tracking-tight text-information tabular-nums">
-                {{ inspectionTotal }}
-              </div>
-              <div class="mt-1 text-[11px] text-muted-foreground tabular-nums">
-                待年检 {{ summary.uninspectedCount }} · 往年提示 {{ summary.inspectionDueCount }}
-              </div>
-            </div>
-            <svg class="h-8 w-16 shrink-0" viewBox="0 0 64 30" aria-hidden="true">
-              <polyline fill="none" stroke="var(--information)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        points="2,23 14,20 26,16 38,17 50,12 62,11" />
-            </svg>
-          </div>
+        <button type="button" class="dash-kpi-card" :disabled="!capabilities.devices" @click="navigate('fire-devices')">
+          <span class="dash-kpi-label">
+            <ClipboardCheckIcon class="size-4 text-information" aria-hidden="true" />
+            在用年检待办
+          </span>
+          <span class="dash-kpi-value text-information">
+            {{ capabilities.devices ? inspectionTotal : '—' }}
+            <span v-if="capabilities.devices" class="dash-kpi-unit">台</span>
+          </span>
+          <span v-if="capabilities.devices" class="dash-kpi-detail">
+            待年检 {{ summary.uninspectedCount }} · 年检提示 {{ summary.inspectionDueCount }}
+          </span>
         </button>
 
-        <!-- KPI 4: 未销号隐患 -->
-        <button type="button" class="dash-kpi-card group text-left" :disabled="!capabilities.hazards"
-                @click="capabilities.hazards && navigate('fire-hazards')">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5 font-medium">
-              <FlameIcon class="size-3.5 text-warning" aria-hidden="true" />
-              未销号消防隐患
-            </span>
-            <span class="rounded-full bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning tabular-nums">
-              待总销号 {{ summary.hazardPendingSection }}
-            </span>
-          </div>
-          <div class="mt-2.5 flex items-end justify-between gap-2">
-            <div>
-              <div class="text-2xl font-bold tracking-tight text-warning tabular-nums">
-                {{ summary.hazardOpen }}
-              </div>
-              <div class="mt-1 text-[11px] text-muted-foreground tabular-nums">
-                已闭环 {{ summary.hazardClosed }} 项 · 闭环率 {{ summary.closureRate.toFixed(1) }}%
-              </div>
-            </div>
-            <svg class="h-8 w-16 shrink-0" viewBox="0 0 64 30" aria-hidden="true">
-              <polyline fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        :points="hazardClosedSpark" />
-            </svg>
-          </div>
+        <button type="button" class="dash-kpi-card" :disabled="!capabilities.hazards" @click="navigate('fire-hazards')">
+          <span class="dash-kpi-label">
+            <FlameIcon class="size-4 text-warning" aria-hidden="true" />
+            未销号消防隐患
+          </span>
+          <span class="dash-kpi-value text-warning">
+            {{ capabilities.hazards ? summary.hazardOpen : '—' }}
+            <span v-if="capabilities.hazards" class="dash-kpi-unit">项</span>
+          </span>
+          <span v-if="capabilities.hazards" class="dash-kpi-detail">
+            待总销号 {{ summary.hazardPendingSection }} · 已闭环 {{ summary.hazardClosed }}
+          </span>
         </button>
 
-        <!-- KPI 5: 演练与维保覆盖 -->
-        <button type="button" class="dash-kpi-card group text-left" :disabled="!capabilities.drills"
-                @click="capabilities.drills && navigate('fire-drills')">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5 font-medium">
-              <SirenIcon class="size-3.5 text-primary" aria-hidden="true" />
-              年度演练与维保
+        <button type="button" class="dash-kpi-card" :disabled="!capabilities.drills" @click="navigate('fire-drills')">
+          <span class="dash-kpi-label">
+            <SirenIcon class="size-4 text-primary" aria-hidden="true" />
+            年度演练与维保
+          </span>
+          <span class="flex flex-wrap items-end justify-between gap-x-2">
+            <span class="dash-kpi-value">
+              {{ capabilities.drills ? summary.drillTotalYear : '—' }}
+              <span v-if="capabilities.drills" class="dash-kpi-unit">场 · 覆盖 {{ drillCoverageRate }}%</span>
             </span>
-            <span class="rounded-full bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success tabular-nums">
-              覆盖 {{ summary.drillCoveredUnits }}/{{ summary.drillTargetUnits }}
-            </span>
-          </div>
-          <div class="mt-2.5 flex items-end justify-between gap-2">
-            <div>
-              <div class="flex items-baseline gap-1.5 tabular-nums">
-                <span class="text-2xl font-bold tracking-tight text-foreground">{{ summary.drillTotalYear }}</span>
-                <span class="text-xs text-muted-foreground">场 ({{ drillCoverageRate }}%)</span>
-              </div>
-              <div class="mt-1 text-[11px] text-muted-foreground tabular-nums">
-                参演 {{ summary.drillParticipantsYear }} 人次 · 维保 {{ summary.maintainerCount }} 家
-              </div>
-            </div>
-            <svg class="h-8 w-16 shrink-0" viewBox="0 0 64 30" aria-hidden="true">
+            <svg v-if="capabilities.drills" class="h-7 w-13 shrink-0" viewBox="0 0 64 30" role="img" aria-label="近 6 个月演练场次走势">
               <polyline fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                         :points="drillSpark" />
             </svg>
-          </div>
+          </span>
+          <span v-if="capabilities.drills || capabilities.maintainers" class="dash-kpi-detail">
+            <span v-if="capabilities.drills">参演 {{ summary.drillParticipantsYear }} 人次</span>
+            <span v-if="capabilities.drills && capabilities.maintainers"> · </span>
+            <span v-if="capabilities.maintainers">维保 {{ summary.maintainerCount }} 家</span>
+          </span>
         </button>
       </section>
 
-      <!-- 第三层：12 栏三列指挥大屏主体 -->
-      <section class="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <!-- 左 4 栏：紧急设备告警队列 + 7 大消防器材品类环形图 -->
-        <div class="space-y-4 xl:col-span-4">
-          <UiCard class="dash-panel">
+      <div class="dash-columns">
+        <div class="dash-column">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <div class="flex items-center gap-2">
-                <span class="size-2 rounded-full" :class="data.urgentDevices.length ? 'bg-destructive dash-pulse' : 'bg-success'" aria-hidden="true"></span>
+                <span class="size-2 rounded-full" :class="data.urgentDevices.length ? 'bg-destructive' : 'bg-muted-foreground'" aria-hidden="true"></span>
                 <h2>紧急设备告警队列</h2>
               </div>
               <button v-if="capabilities.devices" type="button" class="dash-link-btn" @click="navigate('fire-devices')">
@@ -418,8 +403,11 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
                 <ArrowUpRightIcon class="size-3.5" aria-hidden="true" />
               </button>
             </div>
-            <div class="p-4">
-              <div v-if="data.urgentDevices.length" class="space-y-2.5">
+            <div class="dash-panel-body">
+              <UiEmpty v-if="!capabilities.devices" class="empty-state">
+                <UiEmptyHeader><UiEmptyTitle>当前账号无设备台账查看权限</UiEmptyTitle></UiEmptyHeader>
+              </UiEmpty>
+              <div v-else-if="data.urgentDevices.length" class="flex flex-col gap-2">
                 <div v-for="device in data.urgentDevices" :key="device.id"
                      class="dash-urgent-row"
                      :class="device.notices.includes(9) ? 'dash-urgent-danger' : device.notices.includes(3) ? 'dash-urgent-warn' : 'dash-urgent-info'">
@@ -447,15 +435,17 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
             </div>
           </UiCard>
 
-          <!-- 7 大消防器材品类构成环形图 -->
-          <UiCard class="dash-panel">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <h2>消防器材品类构成</h2>
               <span class="text-xs text-muted-foreground">在用 + 库存</span>
             </div>
-            <div class="p-4">
-              <div class="flex flex-col items-center gap-4 sm:flex-row">
-                <svg class="size-32 shrink-0" viewBox="0 0 112 112" role="img" aria-label="消防器材品类分布环形图">
+            <div class="dash-panel-body">
+              <UiEmpty v-if="!capabilities.devices" class="empty-state">
+                <UiEmptyHeader><UiEmptyTitle>当前账号无设备台账查看权限</UiEmptyTitle></UiEmptyHeader>
+              </UiEmpty>
+              <div v-else class="dash-device-mix">
+                <svg class="dash-device-donut" viewBox="0 0 112 112" role="img" aria-label="消防器材品类分布环形图">
                   <circle cx="56" cy="56" r="42" fill="none" stroke="var(--muted)" stroke-width="14" />
                   <circle v-for="seg in donutSegments" :key="seg.code"
                           cx="56" cy="56" r="42" fill="none"
@@ -471,7 +461,7 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
                   </text>
                 </svg>
 
-                <div class="w-full min-w-0 flex-1 space-y-1.5 text-xs tabular-nums">
+                <div class="flex w-full min-w-0 flex-1 flex-col gap-1.5 text-xs tabular-nums">
                   <div v-for="seg in donutSegments" :key="seg.code" class="flex items-center justify-between gap-2">
                     <span class="flex min-w-0 items-center gap-2 text-foreground">
                       <span class="size-2.5 shrink-0 rounded-xs" :style="{ background: seg.color }" aria-hidden="true"></span>
@@ -488,25 +478,25 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
           </UiCard>
         </div>
 
-        <!-- 中 5 栏：段—科—站三级安全态势网格 + 隐患闭环漏斗与月度趋势 -->
-        <div class="space-y-4 xl:col-span-5">
-          <UiCard class="dash-panel">
+        <div class="dash-column">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <div class="flex items-center gap-2">
                 <Building2Icon class="size-4 text-primary" aria-hidden="true" />
                 <h2>段—科—站安全态势网格</h2>
               </div>
-              <div class="flex items-center gap-2.5 text-[11px] text-muted-foreground">
+              <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                 <span class="flex items-center gap-1"><i class="size-2 rounded-full bg-success"></i>正常</span>
                 <span class="flex items-center gap-1"><i class="size-2 rounded-full bg-warning"></i>预警</span>
                 <span class="flex items-center gap-1"><i class="size-2 rounded-full bg-destructive"></i>紧急</span>
               </div>
             </div>
-            <div class="p-4">
-              <div v-if="data.unitStatuses.length" class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="dash-panel-body">
+              <div v-if="data.unitStatuses.length" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 <button v-for="unit in data.unitStatuses.slice(0, 9)" :key="unit.unitId" type="button"
                         class="dash-unit-card text-left"
-                        :class="[unitLevelMeta(unit.level).cardClass, selectedUnitId === String(unit.unitId) ? 'ring-2 ring-primary' : '']"
+                        :class="unitLevelMeta(unit.level).cardClass"
+                        :aria-pressed="selectedUnitId === String(unit.unitId)" :disabled="loading"
                         @click="toggleUnitFocus(unit.unitId)">
                   <div class="flex items-center justify-between gap-2">
                     <span class="truncate text-xs font-semibold text-foreground">{{ unit.name }}</span>
@@ -514,16 +504,18 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
                           :title="unitLevelMeta(unit.level).label"></span>
                   </div>
                   <div class="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    {{ unit.parentName || unitKinds[unit.kind] || unit.kind }} · {{ unit.deviceTotal }} 台
+                    {{ unit.parentName || unitKinds[unit.kind] || unit.kind }}<template v-if="capabilities.devices"> · {{ unit.deviceTotal }} 台</template>
                   </div>
-                  <div class="mt-2.5 flex items-center justify-between border-t border-border/70 pt-2 text-[11px] tabular-nums">
-                    <span v-if="unit.expiredCount > 0" class="font-medium text-destructive">过期 {{ unit.expiredCount }}</span>
-                    <span v-else-if="unit.expiringCount + unit.inspectionAlertCount > 0" class="font-medium text-warning">
-                      预警 {{ unit.expiringCount + unit.inspectionAlertCount }}
-                    </span>
-                    <span v-else class="text-success">器材正常</span>
+                  <div v-if="capabilities.devices || capabilities.hazards" class="mt-2 flex flex-wrap items-center justify-between gap-x-2 border-t border-border/70 pt-1.5 text-[11px] tabular-nums">
+                    <template v-if="capabilities.devices">
+                      <span v-if="unit.expiredCount > 0" class="font-medium text-destructive">过期 {{ unit.expiredCount }}</span>
+                      <span v-else-if="unit.expiringCount + unit.inspectionAlertCount > 0" class="font-medium text-warning">
+                        预警 {{ unit.expiringCount + unit.inspectionAlertCount }}
+                      </span>
+                      <span v-else class="text-success">器材正常</span>
+                    </template>
 
-                    <span :class="unit.openHazardCount > 0 ? 'font-medium text-warning' : 'text-muted-foreground'">
+                    <span v-if="capabilities.hazards" :class="unit.openHazardCount > 0 ? 'font-medium text-warning' : 'text-muted-foreground'">
                       隐患 {{ unit.openHazardCount }}
                     </span>
                   </div>
@@ -532,7 +524,7 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
               <UiEmpty v-else class="empty-state">
                 <UiEmptyHeader><UiEmptyTitle>当前范围暂无下属消防单位</UiEmptyTitle></UiEmptyHeader>
               </UiEmpty>
-              <div v-if="data.unitStatuses.length > 9" class="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <div v-if="data.unitStatuses.length > 9" class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>已优先展示风险最高的 9 个单位，共 {{ data.unitStatuses.length }} 个单位</span>
                 <button v-if="canNavigate('fire:org')" type="button" class="dash-link-btn" @click="navigate('fire-units')">
                   查看全部单位
@@ -542,46 +534,47 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
             </div>
           </UiCard>
 
-          <!-- 隐患整改销号闭环流转漏斗 + 近6月对比 -->
-          <UiCard class="dash-panel">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <h2>隐患整改销号闭环流转</h2>
-              <UiBadge variant="ok">闭环率 {{ summary.closureRate.toFixed(1) }}%</UiBadge>
+              <UiBadge v-if="capabilities.hazards" variant="ok">闭环率 {{ summary.closureRate.toFixed(1) }}%</UiBadge>
             </div>
-            <div class="space-y-4 p-4">
-              <div class="space-y-2.5 text-xs">
-                <div v-for="row in funnelRows" :key="row.key" class="flex items-center gap-3">
-                  <span class="w-24 shrink-0 text-muted-foreground">{{ row.label }}</span>
-                  <div class="h-5 flex-1 overflow-hidden rounded-md bg-muted/80">
-                    <div class="dash-funnel-bar" :class="'dash-funnel-' + row.tone"
-                         :style="{ width: row.count > 0 ? Math.max(row.pct, 10) + '%' : '0%' }">
-                      <span v-if="row.count > 0" class="tabular-nums">{{ row.count }} 项</span>
+            <div class="dash-panel-body">
+              <UiEmpty v-if="!capabilities.hazards" class="empty-state">
+                <UiEmptyHeader><UiEmptyTitle>当前账号无隐患问题库查看权限</UiEmptyTitle></UiEmptyHeader>
+              </UiEmpty>
+              <div v-else class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1.5 text-xs">
+                  <div v-for="row in funnelRows" :key="row.key" class="flex items-center gap-3">
+                    <span class="w-20 shrink-0 text-muted-foreground">{{ row.label }}</span>
+                    <div class="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div class="dash-funnel-bar" :class="'dash-funnel-' + row.tone"
+                           :style="{ width: row.pct + '%' }"></div>
                     </div>
+                    <span class="w-10 shrink-0 text-right font-medium text-foreground tabular-nums">{{ row.count }}</span>
                   </div>
-                  <span class="w-10 shrink-0 text-right font-medium text-foreground tabular-nums">{{ row.count }}</span>
                 </div>
-              </div>
 
-              <!-- 近 6 个月隐患录入 vs 销号迷你柱状图 -->
-              <div class="border-t border-border pt-3">
-                <div class="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>近 6 个月隐患录入与销号趋势</span>
-                  <span class="flex items-center gap-3">
-                    <span class="flex items-center gap-1"><i class="size-2 rounded-xs bg-muted-foreground/35"></i>新增</span>
-                    <span class="flex items-center gap-1"><i class="size-2 rounded-xs bg-primary"></i>销号</span>
-                  </span>
-                </div>
-                <div class="grid grid-cols-6 gap-2 pt-1">
-                  <div v-for="point in data.trends" :key="point.label" class="flex flex-col items-center gap-1">
-                    <div class="flex h-16 w-full items-end justify-center gap-1">
-                      <span class="w-2.5 rounded-t-xs bg-muted-foreground/30 transition-all"
-                            :style="{ height: Math.max(4, Math.round((point.hazardsCreated / trendMax) * 60)) + 'px' }"
-                            :title="`${point.label} 新增 ${point.hazardsCreated} 项`"></span>
-                      <span class="w-2.5 rounded-t-xs bg-primary transition-all"
-                            :style="{ height: Math.max(4, Math.round((point.hazardsClosed / trendMax) * 60)) + 'px' }"
-                            :title="`${point.label} 销号 ${point.hazardsClosed} 项`"></span>
+                <div class="border-t border-border pt-3">
+                  <div class="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <span>近 6 个月隐患录入与销号趋势</span>
+                    <span class="flex items-center gap-3">
+                      <span class="flex items-center gap-1"><i class="size-2 rounded-xs bg-information/70"></i>新增</span>
+                      <span class="flex items-center gap-1"><i class="size-2 rounded-xs bg-primary"></i>销号</span>
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-6 gap-2 pt-1">
+                    <div v-for="point in data.trends" :key="point.label" class="flex flex-col items-center gap-1">
+                      <div class="flex h-16 w-full items-end justify-center gap-1">
+                        <span class="w-2.5 rounded-t-xs bg-information/70"
+                              :style="{ height: (point.hazardsCreated / trendMax * 100) + '%' }"
+                              :title="`${point.label} 新增 ${point.hazardsCreated} 项`"></span>
+                        <span class="w-2.5 rounded-t-xs bg-primary"
+                              :style="{ height: (point.hazardsClosed / trendMax * 100) + '%' }"
+                              :title="`${point.label} 销号 ${point.hazardsClosed} 项`"></span>
+                      </div>
+                      <span class="text-[11px] text-muted-foreground">{{ point.label }}</span>
                     </div>
-                    <span class="text-[11px] text-muted-foreground">{{ point.label }}</span>
                   </div>
                 </div>
               </div>
@@ -589,19 +582,15 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
           </UiCard>
         </div>
 
-        <!-- 右 3 栏：实时业务操作流 + 维保单位值守卡 -->
-        <div class="space-y-4 xl:col-span-3">
-          <UiCard class="dash-panel">
+        <div class="dash-column">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <div class="flex items-center gap-2">
                 <ActivityIcon class="size-4 text-primary" aria-hidden="true" />
-                <h2>实时业务动态</h2>
+                <h2>近期业务动态</h2>
               </div>
-              <span class="text-[11px] text-muted-foreground tabular-nums">
-                {{ dateTime(data.generatedAt).slice(11) }}
-              </span>
             </div>
-            <div class="p-4">
+            <div class="dash-panel-body">
               <ol v-if="data.recentActivities.length" class="dash-timeline">
                 <li v-for="(item, index) in data.recentActivities" :key="index" class="dash-timeline-item">
                   <span class="dash-timeline-dot" :class="activityDotClass(item.tone)" aria-hidden="true"></span>
@@ -618,7 +607,7 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
             </div>
           </UiCard>
 
-          <UiCard class="dash-panel">
+          <UiCard class="dash-panel gap-0 py-0 ring-0">
             <div class="dash-panel-header">
               <div class="flex items-center gap-2">
                 <HandshakeIcon class="size-4 text-primary" aria-hidden="true" />
@@ -629,29 +618,29 @@ const canNavigate = perm => session.user?.permissions.includes(perm)
                 <ArrowUpRightIcon class="size-3.5" aria-hidden="true" />
               </button>
             </div>
-            <div class="p-4">
-              <div v-if="data.maintainers.length" class="space-y-2.5">
+            <div class="dash-panel-body">
+              <div v-if="data.maintainers.length" class="flex flex-col gap-2">
                 <div v-for="m in data.maintainers" :key="m.id" class="dash-maint-card">
                   <div class="flex items-center justify-between gap-2">
                     <span class="truncate text-xs font-semibold text-foreground">{{ m.name }}</span>
                     <UiBadge variant="muted">{{ m.unitCount }} 单位</UiBadge>
                   </div>
-                  <div class="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground tabular-nums">
-                    <span class="flex items-center gap-1">
-                      <PhoneIcon class="size-3 text-primary" aria-hidden="true" />
-                      {{ m.contact }} · {{ m.phone }}
+                  <div class="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 text-xs text-muted-foreground tabular-nums">
+                    <span class="flex min-w-0 items-center gap-1">
+                      <PhoneIcon class="size-3 shrink-0 text-primary" aria-hidden="true" />
+                      <span class="wrap-anywhere">{{ m.contact }} · {{ m.phone }}</span>
                     </span>
                     <span>{{ m.deviceCount }} 台</span>
                   </div>
                 </div>
               </div>
               <UiEmpty v-else class="empty-state">
-                <UiEmptyHeader><UiEmptyTitle>暂无签约维保单位</UiEmptyTitle></UiEmptyHeader>
+                <UiEmptyHeader><UiEmptyTitle>{{ capabilities.maintainers ? '暂无签约维保单位' : '当前账号无维保单位查看权限' }}</UiEmptyTitle></UiEmptyHeader>
               </UiEmpty>
             </div>
           </UiCard>
         </div>
-      </section>
+      </div>
     </div>
-  </div>
+  </main>
 </template>
